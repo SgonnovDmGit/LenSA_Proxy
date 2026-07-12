@@ -28,6 +28,8 @@ docs/server-requirements/
 *.prof
 coverage*.txt
 coverage*.html
+cmd/lensa-proxy/rsrc_windows_*.syso
+docs/mockups/*.png
 
 # IDE and OS
 .idea/

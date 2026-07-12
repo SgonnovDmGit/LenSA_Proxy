@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test:
+  verify-modern:
     runs-on: windows-latest
 
     steps:
@@ -22,8 +22,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: 1.26.1
           cache: true
+
+      - name: Download dependencies
+        run: go mod download
 
       - name: Check formatting
         shell: pwsh
@@ -40,5 +43,31 @@ jobs:
       - name: Test
         run: go test ./...
 
-      - name: Build
+      - name: Race test
+        run: go test -race ./...
+
+      - name: Build modern amd64
+        run: go build ./cmd/lensa-proxy
+
+  compile-386:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+      GOARCH: "386"
+      GOOS: windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.1
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build Windows 386
         run: go build ./cmd/lensa-proxy
