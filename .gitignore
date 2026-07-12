@@ -1,0 +1,38 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+CLAUDE.md
+LenSA_Proxy.ini
+LenSA_Proxy.json
+*.local.json
+
+# Local project workflow
+docs/todo.md
+docs/done.md
+docs/bug-reports.md
+docs/specs/
+docs/backend-requirements/
+docs/client-requirements/
+docs/microservice-requirements/
+docs/server-requirements/
+
+# Go build and test artifacts
+/bin/
+/build/
+/dist/
+*.exe
+*.dll
+*.test
+*.out
+*.prof
+coverage*.txt
+coverage*.html
+
+# IDE and OS
+.idea/
+.vscode/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
