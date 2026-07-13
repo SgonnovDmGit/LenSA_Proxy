@@ -1,6 +1,6 @@
 # Proxy lifecycle flow
 
-**Статус:** planned для v0.1.0; документ станет описанием current behavior после реализации и проверки соответствующего шага.
+**Статус:** current behavior v0.1.0; HTTP, SSE, CONNECT, auth, client tracking и Stop/Restart подтверждены автоматизированными integration-тестами.
 
 ## Участники
 
@@ -30,11 +30,11 @@
 ## Входящее соединение
 
 ```text
-TCP Accept завершён
+Доступен capacity slot из лимита 128 connections?
+  -> нет: Accept ждёт освобождения slot или Stop
+  -> TCP Accept завершён
   -> source IP входит в CIDR выбранного интерфейса?
-     -> нет: connection немедленно закрывается
-  -> достигнут лимит 128 connections?
-     -> да: новое connection не обслуживается до освобождения capacity
+     -> нет: connection немедленно закрывается, slot освобождается
   -> connection регистрируется
   -> refcount source IP увеличивается
   -> HTTP server читает request headers
