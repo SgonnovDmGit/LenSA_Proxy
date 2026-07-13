@@ -38,3 +38,13 @@ docs/mockups/*.png
 *.suo
 .DS_Store
 Thumbs.db
+
+# --- solo-dev-hub:begin ---
+/CLAUDE.*
+.claude/
+docs/project.md
+docs/microservice-announcements/
+docs/server-announcements/
+docs/superpowers/
+docs/sdh_skills/
+# --- solo-dev-hub:end ---
