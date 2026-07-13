@@ -4,7 +4,24 @@
 
 ## Статус
 
-MVP v0.1.0 реализован и проходит unit/integration-тесты, modern Windows smoke и legacy x86 runtime smoke на текущей Windows x64. Публикация релиза блокируется до ручного smoke в `LenSA_Query` и на Windows 7/8.1 либо Windows Server/RDP.
+MVP v0.1.0 реализован и проходит unit/integration-тесты, modern Windows smoke и legacy x86 runtime smoke на текущей Windows x64. Для завершающих ручных проверок публикуется pre-release `v0.1.0-rc.1`; стабильный `v0.1.0` остаётся заблокирован до smoke в `LenSA_Query` и на Windows 7/8.1 либо Windows Server/RDP.
+
+## Скачать
+
+Готовые portable-сборки публикуются на странице [GitHub Releases](https://github.com/SgonnovDmGit/LenSA_Proxy/releases). Для текущей ручной проверки выберите pre-release `v0.1.0-rc.1` и скачайте подходящий executable:
+
+- `LenSA_Proxy_windows_amd64.exe` — современная Windows x64;
+- `LenSA_Proxy_windows_legacy_386.exe` — legacy Windows x86/x64;
+- `SHA256SUMS.txt` — контрольные суммы обеих сборок.
+
+Executable пока не подписаны коммерческим сертификатом, поэтому Windows SmartScreen может показать предупреждение о неизвестном издателе. Перед запуском сверьте файл с опубликованной SHA-256:
+
+```powershell
+Get-Content .\SHA256SUMS.txt
+Get-FileHash .\LenSA_Proxy_windows_amd64.exe -Algorithm SHA256
+```
+
+После успешных smoke результаты фиксируются в release-документации, `Changelog.md` закрывается как `0.1.0`, а annotated tag `v0.1.0` на `main` запускает тот же workflow уже как стабильный GitHub Release.
 
 ## Возможности v0.1.0
 

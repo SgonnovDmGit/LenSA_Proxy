@@ -18,6 +18,7 @@
 - Добавлены unit/integration-тесты HTTP, SSE, TLS, auth, ACL и Stop/Restart.
 - Добавлены modern amd64 и legacy Windows 386 build scripts с icon/manifest resources.
 - Настроены modern verification и legacy artifact jobs в CI.
+- Добавлена tag-triggered публикация GitHub Release с двумя executable и SHA-256 checksums.
 
 ### Security
 

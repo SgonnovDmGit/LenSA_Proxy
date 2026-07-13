@@ -1,0 +1,227 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $number = '(?:0|[1-9]\d*)'
+          $identifier = "(?:$number|\d*[A-Za-z-][0-9A-Za-z-]*)"
+          $pattern = "^v(?<Version>${number}\.${number}\.${number}(?:-${identifier}(?:\.${identifier})*)?)$"
+          if ($env:RELEASE_TAG -notmatch $pattern) {
+            throw "Release tag must be vMAJOR.MINOR.PATCH or a SemVer prerelease."
+          }
+
+          $version = $Matches.Version
+          $tagType = & git cat-file -t "refs/tags/$env:RELEASE_TAG" 2>$null
+          $tagTypeExitCode = $LASTEXITCODE
+          $tagType = "$tagType".Trim()
+          if ($tagTypeExitCode -ne 0 -or $tagType -ne "tag") {
+            throw "Release tag must be annotated."
+          }
+
+          $tagCommit = & git rev-list -n 1 "refs/tags/$env:RELEASE_TAG" 2>$null
+          $tagCommitExitCode = $LASTEXITCODE
+          $tagCommit = "$tagCommit".Trim()
+          if ($tagCommitExitCode -ne 0 -or $tagCommit -notmatch '^[0-9a-f]{40}$') {
+            throw "Cannot resolve the release tag commit."
+          }
+
+          & git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Cannot fetch origin/main."
+          }
+          & git merge-base --is-ancestor $tagCommit refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release tag must point to a commit on main."
+          }
+
+          $isPrerelease = $version.Contains("-")
+          "RELEASE_TAG=$env:RELEASE_TAG" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_VERSION=$version" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_COMMIT=$tagCommit" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "IS_PRERELEASE=$($isPrerelease.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: 1.26.1
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Check formatting
+        shell: pwsh
+        run: |
+          $unformatted = Get-ChildItem -Recurse -Filter *.go | ForEach-Object { gofmt -l $_.FullName }
+          if ($unformatted) {
+            $unformatted
+            exit 1
+          }
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -timeout=60s ./...
+
+      - name: Race test
+        run: go test -race -timeout=120s ./...
+
+      - name: Build modern amd64
+        shell: pwsh
+        run: |
+          $commit = $env:RELEASE_COMMIT.Substring(0, 12)
+          .\scripts\build-modern.ps1 -Version $env:RELEASE_VERSION -Commit $commit -OutputDirectory dist
+
+      - name: Build legacy 386
+        shell: pwsh
+        run: |
+          $commit = $env:RELEASE_COMMIT.Substring(0, 12)
+          .\scripts\build-legacy.ps1 -Version $env:RELEASE_VERSION -Commit $commit -OutputDirectory dist
+
+      - name: Create checksums and release notes
+        shell: pwsh
+        run: |
+          $artifactNames = @(
+            "LenSA_Proxy_windows_amd64.exe"
+            "LenSA_Proxy_windows_legacy_386.exe"
+          )
+          $checksumLines = foreach ($name in $artifactNames) {
+            $path = Join-Path "dist" $name
+            if (-not (Test-Path $path -PathType Leaf)) {
+              throw "Missing release artifact: $path"
+            }
+            $hash = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name"
+          }
+          [IO.File]::WriteAllLines(
+            (Join-Path $PWD "dist\SHA256SUMS.txt"),
+            $checksumLines,
+            [Text.Encoding]::ASCII
+          )
+
+          $heading = if ($env:IS_PRERELEASE -eq "true") { "Unreleased" } else { $env:RELEASE_VERSION }
+          $changelog = [IO.File]::ReadAllText((Join-Path $PWD "Changelog.md"))
+          $pattern = '(?ms)^## \[' + [regex]::Escape($heading) + '\][^\r\n]*\r?\n(?<Body>.*?)(?=^## \[|\z)'
+          $match = [regex]::Match($changelog, $pattern)
+          if (-not $match.Success -or [string]::IsNullOrWhiteSpace($match.Groups["Body"].Value)) {
+            throw "Changelog section [$heading] is missing or empty."
+          }
+
+          if ($env:IS_PRERELEASE -eq "true") {
+            $stableVersion = $env:RELEASE_VERSION.Split("-")[0]
+            $intro = "> Предварительная сборка для ручной проверки перед стабильным ``v$stableVersion``. Legacy-совместимость считается неподтверждённой до целевого smoke."
+          } else {
+            $intro = "Portable-релиз LenSA Proxy ``$env:RELEASE_VERSION`` для Windows."
+          }
+          $notes = @(
+            $intro
+            ""
+            $match.Groups["Body"].Value.Trim()
+            ""
+            "### Проверка загрузки"
+            ""
+            "Скачайте ``SHA256SUMS.txt`` и сверьте SHA-256 выбранного executable перед запуском."
+          ) -join "`r`n"
+          [IO.File]::WriteAllText(
+            (Join-Path $PWD "dist\release-notes.md"),
+            $notes,
+            [Text.UTF8Encoding]::new($false)
+          )
+
+      - name: Create or refresh draft release
+        shell: pwsh
+        run: |
+          $existing = & gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (-not $release.isDraft) {
+              throw "Release $env:RELEASE_TAG is already published."
+            }
+            & gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft --verify-tag --title "LenSA Proxy $env:RELEASE_TAG" --notes-file "dist\release-notes.md"
+          } else {
+            & gh release create $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft --verify-tag --title "LenSA Proxy $env:RELEASE_TAG" --notes-file "dist\release-notes.md"
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "Cannot create or refresh the draft release."
+          }
+
+      - name: Upload and verify release assets
+        shell: pwsh
+        run: |
+          $assets = @(
+            "dist\LenSA_Proxy_windows_amd64.exe#Windows x64"
+            "dist\LenSA_Proxy_windows_legacy_386.exe#Legacy Windows x86"
+            "dist\SHA256SUMS.txt#SHA-256 checksums"
+          )
+          $arguments = @("release", "upload", $env:RELEASE_TAG) + $assets + @("--clobber", "--repo", $env:GITHUB_REPOSITORY)
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Cannot upload release assets."
+          }
+
+          $releaseJson = & gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json assets
+          $releaseViewExitCode = $LASTEXITCODE
+          if ($releaseViewExitCode -ne 0) {
+            throw "Cannot inspect release assets."
+          }
+          $release = $releaseJson | ConvertFrom-Json
+          $expected = @("LenSA_Proxy_windows_amd64.exe", "LenSA_Proxy_windows_legacy_386.exe", "SHA256SUMS.txt")
+          $actual = @($release.assets | ForEach-Object { $_.name })
+          $difference = Compare-Object $expected $actual
+          if ($difference) {
+            $difference | Format-Table | Out-String | Write-Error
+            throw "Release asset set is incomplete or unexpected."
+          }
+
+      - name: Publish release
+        shell: pwsh
+        run: |
+          $arguments = @(
+            "release", "edit", $env:RELEASE_TAG,
+            "--repo", $env:GITHUB_REPOSITORY,
+            "--verify-tag",
+            "--draft=false",
+            "--title", "LenSA Proxy $env:RELEASE_TAG"
+          )
+          if ($env:IS_PRERELEASE -eq "true") {
+            $arguments += @("--prerelease", "--latest=false")
+          } else {
+            $arguments += @("--prerelease=false", "--latest")
+          }
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Cannot publish the release."
+          }
+          $releaseUrl = & gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json url --jq .url
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release was published but its URL could not be read."
+          }
+          $releaseUrl
