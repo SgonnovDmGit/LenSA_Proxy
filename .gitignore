@@ -28,6 +28,8 @@ docs/server-requirements/
 *.prof
 coverage*.txt
 coverage*.html
+cmd/lensa-proxy/rsrc_windows_*.syso
+docs/mockups/*.png
 
 # IDE and OS
 .idea/
@@ -36,3 +38,13 @@ coverage*.html
 *.suo
 .DS_Store
 Thumbs.db
+
+# --- solo-dev-hub:begin ---
+/CLAUDE.*
+.claude/
+docs/project.md
+docs/microservice-announcements/
+docs/server-announcements/
+docs/superpowers/
+docs/sdh_skills/
+# --- solo-dev-hub:end ---

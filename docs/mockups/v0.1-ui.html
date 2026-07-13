@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LenSA Proxy v0.1 — accepted vertical MVP mockup</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --preview-bg: #e7ebf0;
+      --canvas: #f7f8fa;
+      --surface: #ffffff;
+      --surface-soft: #f4f6f8;
+      --field: #ffffff;
+      --text: #1f2937;
+      --muted: #5b6574;
+      --subtle: #7c8797;
+      --border: #cbd2da;
+      --border-strong: #9ca7b5;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --danger-hover: #b91c1c;
+      --warning: #b45309;
+      --focus: #1d4ed8;
+      --shadow: 0 22px 60px rgba(31, 41, 55, .18);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--preview-bg);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      font-size: 15px;
+      line-height: 1.4;
+    }
+
+    button, input, select { font: inherit; }
+    button, select, input[type="checkbox"] { cursor: pointer; }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .design-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      min-height: 68px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(247, 248, 250, .96);
+    }
+
+    .toolbar-title {
+      margin-right: auto;
+      min-width: 280px;
+    }
+
+    .toolbar-title strong { display: block; font-size: 17px; }
+    .toolbar-title span { color: var(--muted); font-size: 13px; }
+
+    .accepted-badge {
+      padding: 7px 10px;
+      border: 1px solid #9ab2d5;
+      border-radius: 4px;
+      background: #e8f0fb;
+      color: #1e4d8d;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .control-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--surface);
+    }
+
+    .control-group > span {
+      padding: 0 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .control-group button {
+      min-height: 34px;
+      padding: 6px 10px;
+      border: 0;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--text);
+    }
+
+    .control-group button[aria-pressed="true"] {
+      background: #e4e8ed;
+      font-weight: 600;
+    }
+
+    .preview-shell {
+      display: grid;
+      min-height: calc(100vh - 68px);
+      place-items: start center;
+      padding: 26px 20px;
+    }
+
+    .preview { width: min(560px, 100%); }
+
+    .variant-label {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 0 4px 10px;
+    }
+
+    .variant-label strong { font-size: 16px; }
+    .variant-label span { color: var(--muted); font-size: 13px; }
+
+    .window {
+      overflow: hidden;
+      width: 100%;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      background: var(--canvas);
+      box-shadow: var(--shadow);
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      height: 40px;
+      border-bottom: 1px solid #d3d7dc;
+      background: #f3f3f3;
+      color: #30343a;
+      user-select: none;
+    }
+
+    .app-mark {
+      display: grid;
+      width: 40px;
+      height: 40px;
+      place-items: center;
+      background: linear-gradient(145deg, #2563eb, #0f766e);
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .4px;
+    }
+
+    .titlebar-title {
+      overflow: hidden;
+      flex: 1;
+      padding: 0 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .window-actions { display: flex; align-self: stretch; }
+    .window-actions span { display: grid; width: 44px; place-items: center; }
+    .window-actions span:last-child { font-size: 22px; font-weight: 200; }
+
+    .app-body { padding: 20px 21px 21px; }
+
+    .app-header {
+      margin-bottom: 17px;
+    }
+
+    .app-header h1 {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1.2;
+    }
+
+    .section-title {
+      margin: 0 7px 8px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .panel {
+      padding: 15px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+    }
+
+    .settings-panel { margin-bottom: 14px; }
+
+    .field { min-width: 0; }
+    .field + .field { margin-top: 10px; }
+
+    .field label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select {
+      width: 100%;
+      min-height: 39px;
+      padding: 7px 9px;
+      border: 1px solid var(--border-strong);
+      border-radius: 3px;
+      background: var(--field);
+      color: var(--text);
+    }
+
+    input:disabled,
+    select:disabled {
+      cursor: not-allowed;
+      background: #edf0f3;
+      color: #737d89;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 39px;
+      margin-top: 8px;
+    }
+
+    .check-row input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+
+    .auth-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .auth-fields .field + .field { margin-top: 0; }
+
+    .status-panel { padding: 17px 20px 19px; }
+
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 30px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: .35px;
+    }
+
+    .status-dot {
+      width: 17px;
+      height: 17px;
+      flex: 0 0 17px;
+      border: 2px solid var(--subtle);
+      border-radius: 50%;
+    }
+
+    .status-description {
+      min-height: 20px;
+      margin: 4px 0 0 27px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .address-row {
+      display: flex;
+      align-items: center;
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--surface-soft);
+    }
+
+    .address-row code {
+      overflow: hidden;
+      flex: 1;
+      padding: 9px 10px;
+      color: var(--text);
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .copy-button {
+      display: grid;
+      width: 40px;
+      height: 36px;
+      flex: 0 0 40px;
+      place-items: center;
+      border: 0;
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .copy-button svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+    }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+      padding: 0 9px;
+    }
+
+    .meta-item span { display: block; color: var(--muted); font-size: 11px; }
+    .meta-item strong { display: block; margin-top: 1px; font-size: 13px; }
+
+    .primary-button {
+      width: 100%;
+      min-height: 44px;
+      margin-top: 11px;
+      border: 0;
+      border-radius: 4px;
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .primary-button:hover { background: var(--accent-hover); }
+
+    .window[data-state="running"] .status-dot {
+      border-color: var(--success);
+      background: var(--success);
+      box-shadow: 0 0 0 4px rgba(22, 163, 74, .14);
+    }
+
+    .window[data-state="running"] .primary-button { background: var(--danger); }
+    .window[data-state="running"] .primary-button:hover { background: var(--danger-hover); }
+
+    .window[data-state="error"] .status-dot {
+      border-color: var(--danger);
+      background: var(--danger);
+      box-shadow: 0 0 0 4px rgba(220, 38, 38, .12);
+    }
+
+    .window[data-state="error"] .status-description { color: var(--danger); }
+
+    .window[data-state="starting"] .status-dot,
+    .window[data-state="stopping"] .status-dot {
+      border-color: var(--warning);
+      border-top-color: transparent;
+      animation: spin .8s linear infinite;
+    }
+
+    .window[data-state="starting"] .primary-button,
+    .window[data-state="stopping"] .primary-button {
+      opacity: .65;
+      pointer-events: none;
+    }
+
+    .scope-note {
+      margin: 10px 4px 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; }
+    }
+
+    @media (max-width: 560px) {
+      .preview-shell { padding: 14px 8px; }
+      .app-body { padding: 16px; }
+      .auth-fields { grid-template-columns: 1fr; }
+      .auth-fields .field + .field { margin-top: 10px; }
+    }
+  </style>
+</head>
+<body data-state="running">
+  <header class="design-toolbar">
+    <div class="toolbar-title">
+      <strong>LenSA Proxy v0.1 — MVP mockup</strong>
+      <span>Вертикальный вариант C со скриншота · без тем и локализации</span>
+    </div>
+    <div class="accepted-badge">Вертикальный C</div>
+    <div class="control-group" aria-label="Состояние приложения">
+      <span>Статус</span>
+      <button type="button" data-state-button="stopped" aria-pressed="false">Стоп</button>
+      <button type="button" data-state-button="running" aria-pressed="true">Работает</button>
+      <button type="button" data-state-button="error" aria-pressed="false">Ошибка</button>
+    </div>
+  </header>
+
+  <main class="preview-shell">
+    <section class="preview">
+      <div class="variant-label">
+        <strong>C — Вертикальная панель</strong>
+        <span>560 × 650 · native Windows UI</span>
+      </div>
+      <div class="window" data-state="running">
+        <div class="titlebar">
+          <div class="app-mark">LP</div>
+          <div class="titlebar-title">LenSA Proxy — Управление</div>
+          <div class="window-actions"><span>—</span><span>□</span><span>×</span></div>
+        </div>
+        <div class="app-body">
+          <div class="app-header">
+            <h1>LenSA Proxy</h1>
+          </div>
+
+          <div class="section-title">Подключение</div>
+          <section class="panel settings-panel">
+            <div class="field">
+              <label for="interface">Сетевой интерфейс</label>
+              <select id="interface" class="config-input">
+                <option>Ethernet · 192.168.1.42/24</option>
+                <option>Wi-Fi · 192.168.0.18/24</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="port">Порт</label>
+              <input id="port" class="config-input port-input" type="number" value="8080" min="1024" max="65535">
+            </div>
+            <label class="check-row"><input class="config-input auth-toggle" type="checkbox"> Требовать авторизацию</label>
+            <div class="auth-fields">
+              <div class="field"><label for="username">Логин</label><input id="username" class="auth-input" type="text" value="lensa" disabled></div>
+              <div class="field"><label for="password">Пароль</label><input id="password" class="auth-input" type="password" value="proxy-pass" disabled></div>
+            </div>
+          </section>
+
+          <section class="panel status-panel">
+            <div class="status-line"><span class="status-dot"></span><span class="status-label">РАБОТАЕТ</span></div>
+            <p class="status-description">Прокси доступен в локальной сети</p>
+            <div class="address-row">
+              <code class="proxy-address">192.168.1.42:8080</code>
+              <button class="copy-button" type="button" aria-label="Копировать адрес"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="1"></rect><path d="M16 8V5H5v11h3"></path></svg></button>
+            </div>
+            <div class="meta-row">
+              <div class="meta-item"><span>Клиенты</span><strong class="client-count">1</strong></div>
+              <div class="meta-item"><span>Сеть</span><strong>LAN only</strong></div>
+            </div>
+            <button class="primary-button state-toggle" type="button">Остановить</button>
+          </section>
+        </div>
+      </div>
+      <p class="scope-note">Темы, локализация, справка, tray, autostart и Windows Service отложены за пределы v0.1.0.</p>
+    </section>
+  </main>
+
+  <script>
+    const stateCopy = {
+      stopped: { label: 'ОСТАНОВЛЕН', description: 'Готов к запуску', button: 'Запустить', clients: '0' },
+      starting: { label: 'ЗАПУСК', description: 'Открываю порт 8080…', button: 'Запускаю…', clients: '0' },
+      running: { label: 'РАБОТАЕТ', description: 'Прокси доступен в локальной сети', button: 'Остановить', clients: '1' },
+      stopping: { label: 'ОСТАНОВКА', description: 'Закрываю активные соединения…', button: 'Останавливаю…', clients: '1' },
+      error: { label: 'ОШИБКА', description: 'Порт 8080 уже занят', button: 'Повторить', clients: '0' }
+    };
+
+    function setPressed(state) {
+      document.querySelectorAll('[data-state-button]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.stateButton === state));
+      });
+    }
+
+    function setConfigEnabled(state) {
+      const enabled = state === 'stopped' || state === 'error';
+      const authToggle = document.querySelector('.auth-toggle');
+      document.querySelectorAll('.config-input').forEach(input => { input.disabled = !enabled; });
+      document.querySelectorAll('.auth-input').forEach(input => {
+        input.disabled = !enabled || !authToggle.checked;
+      });
+    }
+
+    function applyState(state) {
+      const windowElement = document.querySelector('.window');
+      document.body.dataset.state = state;
+      windowElement.dataset.state = state;
+      windowElement.querySelector('.status-label').textContent = stateCopy[state].label;
+      windowElement.querySelector('.status-description').textContent = stateCopy[state].description;
+      windowElement.querySelector('.state-toggle').textContent = stateCopy[state].button;
+      windowElement.querySelector('.client-count').textContent = stateCopy[state].clients;
+      setConfigEnabled(state);
+      setPressed(state);
+    }
+
+    document.querySelectorAll('[data-state-button]').forEach(button => {
+      button.addEventListener('click', () => applyState(button.dataset.stateButton));
+    });
+
+    document.querySelector('.auth-toggle').addEventListener('change', event => {
+      document.querySelectorAll('.auth-input').forEach(input => { input.disabled = !event.target.checked; });
+    });
+
+    document.querySelector('.port-input').addEventListener('input', event => {
+      const port = event.target.value || '—';
+      document.querySelector('.proxy-address').textContent = `192.168.1.42:${port}`;
+    });
+
+    document.querySelector('.copy-button').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      const address = document.querySelector('.proxy-address').textContent;
+      try { await navigator.clipboard.writeText(address); } catch (_) {}
+      const original = button.innerHTML;
+      button.textContent = 'OK';
+      setTimeout(() => { button.innerHTML = original; }, 900);
+    });
+
+    document.querySelector('.state-toggle').addEventListener('click', () => {
+      if (document.body.dataset.state === 'running') {
+        applyState('stopping');
+        setTimeout(() => applyState('stopped'), 650);
+        return;
+      }
+      applyState('starting');
+      setTimeout(() => applyState('running'), 650);
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const initialState = params.get('state');
+    applyState(['stopped', 'running', 'error'].includes(initialState) ? initialState : 'running');
+  </script>
+</body>
+</html>

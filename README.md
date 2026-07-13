@@ -1,99 +1,139 @@
 # LenSA Proxy
 
-Лёгкий portable HTTP/HTTPS forward proxy для локальной сети. Приложение позволяет запустить прокси на выбранном LAN-интерфейсе, при необходимости включить логин и пароль и передать адрес клиенту, включая `LenSA_Query`.
+Лёгкий portable HTTP/HTTPS forward proxy для локальной сети. Приложение запускает proxy на выбранном LAN-интерфейсе, при необходимости включает логин и пароль и показывает адрес для `LenSA_Query` или другого HTTP proxy-aware клиента.
 
 ## Статус
 
-Проект находится на стадии первоначального scaffold. Реализация proxy-ядра и UI ещё не начата.
+MVP v0.1.0 реализован и проходит unit/integration-тесты, modern Windows smoke и legacy x86 runtime smoke на текущей Windows x64. Публикация релиза блокируется до ручного smoke в `LenSA_Query` и на Windows 7/8.1 либо Windows Server/RDP.
 
-## Стек
+## Возможности v0.1.0
 
-- **Go** — сетевое ядро и application-логика.
-- **goproxy** — планируемое ядро HTTP forward proxy и HTTPS `CONNECT`.
-- **Windigo** — планируемый нативный Win32-интерфейс без WebView2, .NET и OpenGL.
-- **go-legacy-win7** — отдельный проверяемый toolchain только для legacy-сборок Windows 7/8 и Server 2008 R2/2012.
-
-Зависимости будут добавляться вместе с первой реализацией и фиксироваться точными версиями.
-
-## Возможности MVP
-
-- выбор локального сетевого интерфейса и порта;
 - стандартный HTTP forward proxy;
-- HTTPS через прозрачный `CONNECT` без MITM;
+- HTTPS через `CONNECT` без MITM и подмены сертификатов;
+- выбор конкретного RFC1918 IPv4-интерфейса и порта;
+- доступ только из подсети выбранного интерфейса;
+- только публичные internet targets с защитой от DNS rebinding;
+- `CONNECT` только к стандартному HTTPS-порту `443`;
 - опциональная HTTP Basic-аутентификация;
-- разрешение подключений только из локальной сети;
-- запуск и остановка из компактного нативного окна;
-- один portable `.exe` на каждую поддерживаемую архитектуру Windows.
+- нативное русское Win32-окно с Start/Stop, адресом и числом активных клиентов;
+- modern Windows x64 и отдельная legacy Windows x86 сборки;
+- один `.exe` без WebView2, .NET, OpenGL, CGO и внешнего runtime.
 
-## Не входит в MVP
+## Не входит в v0.1.0
 
-- SOCKS4/SOCKS5;
-- VPN, TUN/TAP и прозрачная маршрутизация всего трафика;
-- расшифровка HTTPS и установка корневых сертификатов;
-- web-фильтрация и подмена содержимого;
-- Windows Service и автозапуск.
+- темы и локализация;
+- сохранение настроек и пароля;
+- tray, автозапуск и Windows Service;
+- автоматическое изменение Windows Firewall;
+- SOCKS, VPN, TUN/TAP и transparent proxy;
+- HTTPS MITM, сертификаты, фильтрация и traffic history;
+- IPv6 listener и системная настройка proxy Windows.
 
-## Быстрый старт для разработки
+## Использование
+
+1. Запустите подходящий `.exe` без установки.
+2. Выберите LAN-интерфейс и порт, по умолчанию `8080`.
+3. При необходимости включите авторизацию и введите логин/пароль.
+4. Нажмите **Запустить**.
+5. Скопируйте показанный `IP:PORT` в `LenSA_Query` или другой клиент.
+6. Если Windows Firewall запросит разрешение, разрешайте доступ только для доверенной частной сети. Приложение само firewall rules не создаёт.
+
+Настройки и credentials существуют только в памяти процесса и сбрасываются после закрытия.
+
+### Проверка через curl
+
+```powershell
+curl.exe -x http://192.168.1.42:8080 http://example.com
+curl.exe -x http://192.168.1.42:8080 https://example.com
+curl.exe -x http://192.168.1.42:8080 -U user:password https://example.com
+```
+
+Замените адрес proxy на значение из окна приложения.
+
+## Артефакты
+
+| Файл | Назначение |
+|---|---|
+| `LenSA_Proxy_windows_amd64.exe` | Windows 10/11 и современные Windows Server x64 |
+| `LenSA_Proxy_windows_legacy_386.exe` | Windows 7/8.1 и legacy Windows Server/RDP, x86/x64 |
+
+Legacy binary собирается `go-legacy-win7 v1.26.4-1`. Совместимость считается подтверждённой только после runtime smoke на целевой ОС.
+
+## Сборка из исходников
+
+Требуется официальный Go 1.26.1 или совместимый более новый toolchain.
+
+```powershell
+.\scripts\build-modern.ps1 -Version 0.1.0
+.\scripts\build-legacy.ps1 -Version 0.1.0
+```
+
+Modern script использует установленный официальный Go. Legacy script скачивает зафиксированный Windows amd64 archive `go-legacy-win7 v1.26.4-1`, проверяет SHA-256 и cross-компилирует x86 artifact. Toolchain cache и binaries находятся в ignored `build/`/`dist/`.
+
+Оба script:
+
+- генерируют Win32 resources через `github.com/akavel/rsrc v0.10.2`;
+- встраивают LP icon, Common Controls v6 и system-DPI manifest;
+- используют `CGO_ENABLED=0`, `-trimpath` и Windows GUI subsystem;
+- печатают SHA-256 готового `.exe`.
+
+## Разработка и проверки
 
 ```powershell
 go test ./...
 go vet ./...
-go build ./cmd/lensa-proxy
+go test -race ./...
+.\scripts\build-modern.ps1 -OutputDirectory build\verify-modern
+.\scripts\build-legacy.ps1 -OutputDirectory build\verify-legacy
 ```
 
-Переменные окружения приложению не требуются. Пользовательские настройки планируется хранить в portable-конфигурации рядом с исполняемым файлом; способ хранения пароля будет определён отдельно.
+Integration suite поднимает локальные HTTP/TLS/TCP backends и проверяет HTTP body/headers, Basic auth, SSE streaming, неизменный target TLS certificate, private-target blocking, `CONNECT`, Stop и повторный bind порта без внешнего internet dependency.
+
+## Стек
+
+- **Go 1.23 language baseline** — domain, application и network core;
+- **goproxy v1.8.4** — HTTP forward proxy и `CONNECT` engine;
+- **Windigo v0.2.6** — pure-Go Win32 UI;
+- **go-legacy-win7 v1.26.4-1** — отдельный legacy build toolchain;
+- **rsrc v0.10.2** — compile-time icon/manifest resources.
 
 ## Архитектура
 
 Слои: `presentation → application → domain ← infrastructure`.
 
-- `cmd/lensa-proxy/` — composition root и точка входа;
+- `cmd/lensa-proxy/` — composition root;
 - `internal/presentation/windows/` — нативный Windows UI;
-- `internal/application/` — сценарии запуска, остановки и публикации состояния;
-- `internal/domain/proxy/` — конфигурация, состояния и интерфейсы proxy-домена;
-- `internal/infrastructure/network/` — listener, proxy engine, сетевые интерфейсы и платформенная интеграция;
-- `tests/integration/` — интеграционные проверки HTTP, `CONNECT`, auth и LenSA.
+- `internal/application/` — Start/Stop state machine и snapshots;
+- `internal/domain/proxy/` — конфигурация, состояния и инварианты;
+- `internal/infrastructure/network/` — interfaces, ACL, safe resolver/dialer, listener и proxy engine;
+- `tests/integration/` — end-to-end HTTP/SSE/TLS/CONNECT lifecycle tests.
 
-Инфраструктура реализует интерфейсы, определённые внутренними слоями. UI не содержит сетевой бизнес-логики.
+UI не содержит сетевой логики. Windows-specific код изолирован в presentation/composition root; proxy core не зависит от Windigo.
 
 ## Безопасность
 
-- по умолчанию слушать выбранный частный LAN-адрес, а не все интерфейсы;
-- не открывать порт для публичных сетей автоматически;
-- удалять `Proxy-Authorization` перед отправкой запроса upstream;
-- не логировать пароли, токены, тела запросов и полные URL;
-- блокировать обращения через proxy к loopback, link-local и служебным адресам хоста;
-- не выполнять HTTPS MITM.
-
-## Целевые сборки
-
-| Артефакт | Назначение |
-|---|---|
-| `LenSA_Proxy-windows-amd64.exe` | Windows 10/11, Server 2016+ |
-| `LenSA_Proxy-windows7-amd64.exe` | Legacy Windows 7/8.1, Server 2008 R2/2012 R2 |
-| `LenSA_Proxy-windows7-386.exe` | Опционально, после отдельного x86 smoke |
-
-Мультиплатформенная оболочка для Linux/macOS возможна позже поверх того же domain/application core.
+- listener никогда не использует `0.0.0.0`;
+- source IP берётся из TCP connection и проверяется по выбранному CIDR;
+- private, loopback, link-local, multicast, CGNAT, documentation и local-host targets блокируются;
+- DNS разрешается один раз, dial выполняется к проверенному literal IP;
+- credentials сравниваются через fixed-size SHA-256 digest и constant-time comparison;
+- `Proxy-Authorization` и hop-by-hop headers не уходят upstream;
+- request body, credentials, token и полный URL не логируются;
+- Stop закрывает обычные и hijacked `CONNECT` connections;
+- HTTPS payload остаётся end-to-end encrypted между клиентом и target.
 
 ## Связанные репозитории
 
 | Репозиторий | Роль | Описание |
 |---|---|---|
-| `LenSA_Query` | клиент | Внешняя обработка 1С, уже принимающая параметры HTTP-прокси |
-| `swancode_server` | сервер | Сервер Swan Code, к которому обращается LenSA |
-| `rdp-ghost` | UI reference | Референс компактного portable-интерфейса и release-пайплайна |
-
-## Проверки
-
-| Команда | Назначение |
-|---|---|
-| `go test ./...` | Unit- и integration-тесты |
-| `go vet ./...` | Статический анализ |
-| `go build ./cmd/lensa-proxy` | Проверка сборки текущей платформы |
+| `LenSA_Query` | клиент | Внешняя обработка 1С с host/port/credentials HTTP proxy |
+| `swancode_server` | server | Основной upstream LenSA |
+| `rdp-ghost` | UI reference | Референс compact portable Windows utility |
 
 ## Документация
 
 - `Changelog.md` — история изменений;
-- `docs/specs/` — локальные phase-спеки;
-- `docs/todo.md` — локальный roadmap;
-- `CLAUDE.md` — локальные правила для AI.
+- `docs/flows/proxy-lifecycle.md` — current lifecycle HTTP/CONNECT;
+- `docs/mockups/v0.1-ui.html` — утверждённый UI mockup;
+- `docs/specs/` — локальные phase specs;
+- `docs/todo.md` — локальный roadmap.
