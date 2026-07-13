@@ -11,16 +11,19 @@ on:
       - dev
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   verify-modern:
     runs-on: windows-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version: 1.26.1
           cache: true
@@ -51,7 +54,7 @@ jobs:
         run: .\scripts\build-modern.ps1 -Version 0.1.0 -OutputDirectory build\ci-modern
 
       - name: Upload modern artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: LenSA-Proxy-modern-amd64
           path: build/ci-modern/LenSA_Proxy_windows_amd64.exe
@@ -63,10 +66,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Set up resource Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version: 1.26.1
           cache: true
@@ -76,7 +79,7 @@ jobs:
         run: .\scripts\build-legacy.ps1 -Version 0.1.0 -OutputDirectory build\ci-legacy
 
       - name: Upload legacy artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: LenSA-Proxy-legacy-386
           path: build/ci-legacy/LenSA_Proxy_windows_legacy_386.exe

@@ -17,6 +17,7 @@ const (
 	stopErrorMessage          = "Не удалось остановить прокси-сервер"
 	portInUseErrorMessage     = "Выбранный порт уже занят"
 	permissionErrorMessage    = "Недостаточно прав для открытия порта"
+	windowsAddressInUseErrno  = syscall.Errno(10048)
 	failedStartCleanupTimeout = 5 * time.Second
 )
 
@@ -191,7 +192,7 @@ func (s *Service) failStop(config proxy.Config) {
 }
 
 func lifecycleErrorMessage(err error, fallback string) string {
-	if errors.Is(err, syscall.EADDRINUSE) {
+	if errors.Is(err, syscall.EADDRINUSE) || errors.Is(err, windowsAddressInUseErrno) {
 		return portInUseErrorMessage
 	}
 	if errors.Is(err, os.ErrPermission) {

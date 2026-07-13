@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"net"
 	"net/netip"
 	"os"
 	"reflect"
@@ -552,6 +553,23 @@ func TestLifecycleErrorMessage(t *testing.T) {
 				t.Fatalf("lifecycleErrorMessage() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLifecycleErrorMessageForOccupiedPort(t *testing.T) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	defer listener.Close()
+
+	conflict, err := net.Listen("tcp4", listener.Addr().String())
+	if err == nil {
+		conflict.Close()
+		t.Fatal("second net.Listen() succeeded, want occupied-port error")
+	}
+	if got := lifecycleErrorMessage(err, "fallback"); got != portInUseErrorMessage {
+		t.Fatalf("lifecycleErrorMessage() = %q, want %q; listen error = %v", got, portInUseErrorMessage, err)
 	}
 }
 
