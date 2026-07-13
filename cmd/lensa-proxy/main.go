@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	version = "dev"
-	commit  = "unknown"
+	version  = "dev"
+	commit   = "unknown"
+	packaged = "false"
 )
 
 func main() {
@@ -31,7 +32,11 @@ func main() {
 		showStartupError()
 		os.Exit(1)
 	}
-	code, err := windows.Run(service)
+	run := windows.Run
+	if packaged == "true" {
+		run = windows.RunPackaged
+	}
+	code, err := run(service)
 	if err != nil {
 		showStartupError()
 		os.Exit(1)

@@ -22,6 +22,7 @@ const (
 	windowHeight      = 600
 	snapshotTimerID   = 1
 	snapshotInterval  = 200
+	iconResourceID    = 2
 	stopTimeout       = 5 * time.Second
 	operationFallback = "Не удалось выполнить операцию"
 )
@@ -108,6 +109,14 @@ type appWindow struct {
 }
 
 func Run(service Service) (int, error) {
+	return run(service, 0)
+}
+
+func RunPackaged(service Service) (int, error) {
+	return run(service, iconResourceID)
+}
+
+func run(service Service, iconID uint16) (int, error) {
 	if service == nil {
 		return 1, errors.New("windows service is nil")
 	}
@@ -120,20 +129,22 @@ func Run(service Service) (int, error) {
 		return 1, err
 	}
 	defer resources.close()
-	window := newAppWindow(service, interfaces, resources)
+	window := newAppWindow(service, interfaces, resources, iconID)
 	window.bindEvents()
 	return window.wnd.RunAsMain(), nil
 }
 
-func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resources *windowResources) *appWindow {
+func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resources *windowResources, iconID uint16) *appWindow {
 	clientWidth, clientHeight := ui.Dpi(windowWidth, windowHeight)
-	wnd := ui.NewMain(
-		ui.OptsMain().
-			Title("LenSA Proxy").
-			Size(clientWidth, clientHeight).
-			Style(windowStyle).
-			ClassBrush(resources.faceBrush),
-	)
+	options := ui.OptsMain().
+		Title("LenSA Proxy").
+		Size(clientWidth, clientHeight).
+		Style(windowStyle).
+		ClassBrush(resources.faceBrush)
+	if iconID != 0 {
+		options.ClassIconId(iconID)
+	}
+	wnd := ui.NewMain(options)
 	window := &appWindow{
 		service:     service,
 		interfaces:  append([]proxy.NetworkInterface(nil), interfaces...),

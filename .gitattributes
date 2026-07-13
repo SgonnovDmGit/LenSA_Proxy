@@ -4,7 +4,10 @@
 .gitignore text eol=lf
 .env.example text eol=lf
 go.mod text eol=lf
+go.sum text eol=lf
 *.go text eol=lf
+*.html text eol=lf
+*.manifest text eol=lf
 *.md text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf

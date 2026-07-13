@@ -41,33 +41,44 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ./...
+        run: go test -timeout=60s ./...
 
       - name: Race test
-        run: go test -race ./...
+        run: go test -race -timeout=120s ./...
 
       - name: Build modern amd64
-        run: go build ./cmd/lensa-proxy
+        shell: pwsh
+        run: .\scripts\build-modern.ps1 -Version 0.1.0 -OutputDirectory build\ci-modern
 
-  compile-386:
+      - name: Upload modern artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LenSA-Proxy-modern-amd64
+          path: build/ci-modern/LenSA_Proxy_windows_amd64.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  build-legacy:
     runs-on: windows-latest
-    env:
-      CGO_ENABLED: "0"
-      GOARCH: "386"
-      GOOS: windows
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
+      - name: Set up resource Go
         uses: actions/setup-go@v5
         with:
           go-version: 1.26.1
           cache: true
 
-      - name: Download dependencies
-        run: go mod download
+      - name: Build legacy 386
+        shell: pwsh
+        run: .\scripts\build-legacy.ps1 -Version 0.1.0 -OutputDirectory build\ci-legacy
 
-      - name: Build Windows 386
-        run: go build ./cmd/lensa-proxy
+      - name: Upload legacy artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LenSA-Proxy-legacy-386
+          path: build/ci-legacy/LenSA_Proxy_windows_legacy_386.exe
+          if-no-files-found: error
+          retention-days: 7
