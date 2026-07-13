@@ -4,11 +4,11 @@
 
 ## Статус
 
-MVP v0.1.0 реализован и проходит unit/integration-тесты, modern Windows smoke и legacy x86 runtime smoke на текущей Windows x64. Для завершающих ручных проверок публикуется pre-release `v0.1.0-rc.1`; стабильный `v0.1.0` остаётся заблокирован до smoke в `LenSA_Query` и на Windows 7/8.1 либо Windows Server/RDP.
+MVP v0.1.0 реализован и проходит unit/integration-тесты, modern Windows smoke и legacy x86 runtime smoke на текущей Windows x64. Для завершающих ручных проверок публикуется pre-release `v0.1.0-rc.2`; стабильный `v0.1.0` остаётся заблокирован до smoke в `LenSA_Query` и на Windows 7/8.1 либо Windows Server/RDP.
 
 ## Скачать
 
-Готовые portable-сборки публикуются на странице [GitHub Releases](https://github.com/SgonnovDmGit/LenSA_Proxy/releases). Для текущей ручной проверки выберите pre-release `v0.1.0-rc.1` и скачайте подходящий executable:
+Готовые portable-сборки публикуются на странице [GitHub Releases](https://github.com/SgonnovDmGit/LenSA_Proxy/releases). Для текущей ручной проверки выберите pre-release `v0.1.0-rc.2` и скачайте подходящий executable:
 
 - `LenSA_Proxy_windows_amd64.exe` — современная Windows x64;
 - `LenSA_Proxy_windows_legacy_386.exe` — legacy Windows x86/x64;
@@ -32,6 +32,8 @@ Get-FileHash .\LenSA_Proxy_windows_amd64.exe -Algorithm SHA256
 - только публичные internet targets с защитой от DNS rebinding;
 - `CONNECT` только к стандартному HTTPS-порту `443`;
 - опциональная HTTP Basic-аутентификация;
+- генерация, раскрытие и копирование временных credentials без сохранения на диск;
+- отдельное копирование host и port в формате настроек `LenSA_Query`;
 - нативное русское Win32-окно с Start/Stop, адресом и числом активных клиентов;
 - modern Windows x64 и отдельная legacy Windows x86 сборки;
 - один `.exe` без WebView2, .NET, OpenGL, CGO и внешнего runtime.
@@ -50,10 +52,11 @@ Get-FileHash .\LenSA_Proxy_windows_amd64.exe -Algorithm SHA256
 
 1. Запустите подходящий `.exe` без установки.
 2. Выберите LAN-интерфейс и порт, по умолчанию `8080`.
-3. При необходимости включите авторизацию и введите логин/пароль.
+3. При необходимости включите авторизацию и введите login/password либо нажмите **Сгенерировать**.
 4. Нажмите **Запустить**.
-5. Скопируйте показанный `IP:PORT` в `LenSA_Query` или другой клиент.
-6. Если Windows Firewall запросит разрешение, разрешайте доступ только для доверенной частной сети. Приложение само firewall rules не создаёт.
+5. Для `LenSA_Query` скопируйте **Хост** без `http://`, **Порт**, login и password отдельными кнопками; режим proxy в 1С — **Настройка**.
+6. Для другого proxy-aware клиента используйте те же host/port и при необходимости Basic credentials.
+7. Если Windows Firewall запросит разрешение, разрешайте доступ только для доверенной частной сети. Приложение само firewall rules не создаёт.
 
 Настройки и credentials существуют только в памяти процесса и сбрасываются после закрытия.
 

@@ -1,6 +1,11 @@
 package windows
 
 import (
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"io"
+	"net/netip"
 	"strconv"
 	"strings"
 
@@ -41,6 +46,51 @@ type formValues struct {
 	authEnabled    bool
 	username       string
 	password       string
+}
+
+type authControlState struct {
+	credentialsEnabled    bool
+	credentialsReadOnly   bool
+	generateEnabled       bool
+	copyLoginEnabled      bool
+	passwordActionEnabled bool
+}
+
+func connectionParts(address string) (string, string) {
+	address = strings.TrimSpace(address)
+	if address == "" || address == "—" {
+		return "—", "—"
+	}
+	parsed, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return "—", "—"
+	}
+	return parsed.Addr().String(), strconv.Itoa(int(parsed.Port()))
+}
+
+func generateCredentialPair(random io.Reader) (proxy.Credentials, error) {
+	if random == nil {
+		return proxy.Credentials{}, errors.New("random source is nil")
+	}
+	value := make([]byte, 18)
+	if _, err := io.ReadFull(random, value); err != nil {
+		return proxy.Credentials{}, err
+	}
+	return proxy.Credentials{
+		Username: "lensa-" + hex.EncodeToString(value[:3]),
+		Password: base64.RawURLEncoding.EncodeToString(value[3:]),
+	}, nil
+}
+
+func mapAuthControlState(formEnabled, authEnabled, closing bool, username, password string) authControlState {
+	available := authEnabled && !closing
+	return authControlState{
+		credentialsEnabled:    available,
+		credentialsReadOnly:   available && !formEnabled,
+		generateEnabled:       available && formEnabled,
+		copyLoginEnabled:      available && strings.TrimSpace(username) != "",
+		passwordActionEnabled: available && password != "",
+	}
 }
 
 func mapSnapshot(snapshot proxy.Snapshot) viewModel {
