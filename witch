@@ -1,0 +1,12 @@
+*   [33m0a30a1b[m[33m ([m[1;31morigin/main[m[33m, [m[1;32mmain[m[33m)[m Release candidate v0.1.0 — portable HTTP/HTTPS proxy MVP
+[31m|[m[32m\[m  
+[31m|[m * [33m3e94630[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mdev[m[33m, [m[1;31morigin/dev[m[33m, [m[1;31morigin/HEAD[m[33m)[m chore(sdh): sync repository metadata
+[31m|[m * [33m6c27f64[m Make Windows artifacts reproducible.
+[31m|[m * [33mb34d471[m Add the native Windows control surface.
+[31m|[m * [33md0a4315[m Coordinate proxy lifecycle for the UI.
+[31m|[m * [33m629af31[m Implement the bounded proxy server lifecycle.
+[31m|[m * [33m3e936e0[m Enforce safe proxy network boundaries.
+[31m|[m * [33m6e09fd8[m Define the proxy domain contract.
+[31m|[m * [33m1a673f7[m Establish implementation compatibility gates.
+[31m|[m[31m/[m  
+* [33m32637ef[m init: project scaffold with docs
