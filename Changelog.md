@@ -30,3 +30,7 @@
 ### Changed
 
 - MVP сокращён до одного русского системного UI без тем, persistence, tray и firewall automation.
+
+### Fixed
+
+- Конфликт занятого порта на Windows корректно распознаётся как `WSAEADDRINUSE` и показывает понятную ошибку.
