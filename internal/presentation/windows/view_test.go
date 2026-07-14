@@ -129,26 +129,24 @@ func TestMapSnapshot(t *testing.T) {
 	}
 }
 
-func TestConnectionParts(t *testing.T) {
+func TestConnectionHost(t *testing.T) {
 	tests := []struct {
-		name     string
-		address  string
-		wantHost string
-		wantPort string
+		name    string
+		address string
+		want    string
 	}{
-		{name: "IPv4", address: "192.168.1.80:8080", wantHost: "192.168.1.80", wantPort: "8080"},
-		{name: "IPv6", address: "[2001:db8::1]:443", wantHost: "2001:db8::1", wantPort: "443"},
-		{name: "empty", wantHost: "—", wantPort: "—"},
-		{name: "placeholder", address: "—", wantHost: "—", wantPort: "—"},
-		{name: "URL is invalid", address: "http://192.168.1.80:8080", wantHost: "—", wantPort: "—"},
-		{name: "unbracketed IPv6 is invalid", address: "2001:db8::1:443", wantHost: "—", wantPort: "—"},
-		{name: "invalid port", address: "192.168.1.80:70000", wantHost: "—", wantPort: "—"},
+		{name: "IPv4", address: "192.168.1.80:8080", want: "192.168.1.80"},
+		{name: "IPv6", address: "[2001:db8::1]:443", want: "2001:db8::1"},
+		{name: "empty", want: "—"},
+		{name: "placeholder", address: "—", want: "—"},
+		{name: "URL is invalid", address: "http://192.168.1.80:8080", want: "—"},
+		{name: "unbracketed IPv6 is invalid", address: "2001:db8::1:443", want: "—"},
+		{name: "invalid port", address: "192.168.1.80:70000", want: "—"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			host, port := connectionParts(tt.address)
-			if host != tt.wantHost || port != tt.wantPort {
-				t.Fatalf("connectionParts(%q) = %q, %q; want %q, %q", tt.address, host, port, tt.wantHost, tt.wantPort)
+			if got := connectionHost(tt.address); got != tt.want {
+				t.Fatalf("connectionHost(%q) = %q, want %q", tt.address, got, tt.want)
 			}
 		})
 	}
@@ -319,6 +317,34 @@ func TestParseForm(t *testing.T) {
 			}
 			if err == nil && got != tt.want {
 				t.Fatalf("parseForm() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParsePort(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    uint16
+		wantErr bool
+	}{
+		{name: "valid", value: " 8081 ", want: 8081},
+		{name: "minimum", value: "1024", want: 1024},
+		{name: "maximum", value: "65535", want: 65535},
+		{name: "empty", wantErr: true},
+		{name: "below minimum", value: "1023", wantErr: true},
+		{name: "above maximum", value: "65536", wantErr: true},
+		{name: "non numeric", value: "808x", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parsePort(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parsePort(%q) error = %v, wantErr %v", tt.value, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("parsePort(%q) = %d, want %d", tt.value, got, tt.want)
 			}
 		})
 	}

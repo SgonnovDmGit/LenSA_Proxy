@@ -56,16 +56,16 @@ type authControlState struct {
 	passwordActionEnabled bool
 }
 
-func connectionParts(address string) (string, string) {
+func connectionHost(address string) string {
 	address = strings.TrimSpace(address)
 	if address == "" || address == "—" {
-		return "—", "—"
+		return "—"
 	}
 	parsed, err := netip.ParseAddrPort(address)
 	if err != nil {
-		return "—", "—"
+		return "—"
 	}
-	return parsed.Addr().String(), strconv.Itoa(int(parsed.Port()))
+	return parsed.Addr().String()
 }
 
 func generateCredentialPair(random io.Reader) (proxy.Credentials, error) {
@@ -159,17 +159,13 @@ func parseForm(values formValues, interfaces []proxy.NetworkInterface) (proxy.Co
 	if values.interfaceIndex < 0 || values.interfaceIndex >= len(interfaces) {
 		return proxy.Config{}, proxy.ErrInterfaceNameRequired
 	}
-	portText := strings.TrimSpace(values.port)
-	if portText == "" || strings.IndexFunc(portText, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
-		return proxy.Config{}, proxy.ErrPortOutOfRange
-	}
-	port, err := strconv.ParseUint(portText, 10, 16)
-	if err != nil || port < uint64(proxy.MinPort) {
-		return proxy.Config{}, proxy.ErrPortOutOfRange
+	port, err := parsePort(values.port)
+	if err != nil {
+		return proxy.Config{}, err
 	}
 	config := proxy.Config{
 		Interface:   interfaces[values.interfaceIndex],
-		Port:        uint16(port),
+		Port:        port,
 		AuthEnabled: values.authEnabled,
 	}
 	if values.authEnabled {
@@ -182,4 +178,16 @@ func parseForm(values formValues, interfaces []proxy.NetworkInterface) (proxy.Co
 		return proxy.Config{}, err
 	}
 	return config, nil
+}
+
+func parsePort(value string) (uint16, error) {
+	portText := strings.TrimSpace(value)
+	if portText == "" || strings.IndexFunc(portText, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+		return 0, proxy.ErrPortOutOfRange
+	}
+	port, err := strconv.ParseUint(portText, 10, 16)
+	if err != nil || port < uint64(proxy.MinPort) {
+		return 0, proxy.ErrPortOutOfRange
+	}
+	return uint16(port), nil
 }

@@ -4,7 +4,7 @@
 
 Формат основан на Keep a Changelog, версионирование — SemVer.
 
-## [Unreleased]
+## [0.1.0] — 2026-07-14
 
 ### Added
 
@@ -20,7 +20,7 @@
 - Настроены modern verification и legacy artifact jobs в CI.
 - Добавлена tag-triggered публикация GitHub Release с двумя executable и SHA-256 checksums.
 - Добавлены cryptographic generator, reveal и отдельное копирование login/password.
-- Добавлены отдельные копируемые host/port в формате настроек `LenSA_Query`.
+- Добавлены вычисляемый копируемый host и кнопка копирования рядом с полем port для настроек `LenSA_Query`.
 
 ### Security
 
@@ -33,7 +33,10 @@
 
 - MVP сокращён до одного русского системного UI без тем, persistence, tray и firewall automation.
 - Credentials остаются selectable read-only во время работы proxy; изменяемые сетевые настройки по-прежнему заблокированы.
+- Интеграционный smoke с `LenSA_Query`, включая Basic-аутентификацию и длинный SSE-ответ, подтверждён на modern Windows-сборке.
+- Legacy 386 executable публикуется как неподтверждённая compatibility-сборка; целевой runtime smoke на Windows 7/8.1 или Windows Server/RDP перенесён в `v0.3.0`.
 
 ### Fixed
 
 - Конфликт занятого порта на Windows корректно распознаётся как `WSAEADDRINUSE` и показывает понятную ошибку.
+- Ответ `407` на HTTPS `CONNECT` теперь явно закрывает соединение, позволяя клиентам повторить запрос с Basic-аутентификацией на новом сокете.
