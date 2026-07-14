@@ -139,7 +139,7 @@ jobs:
             $stableVersion = $env:RELEASE_VERSION.Split("-")[0]
             $intro = "> Предварительная сборка для ручной проверки перед стабильным ``v$stableVersion``. Legacy-совместимость считается неподтверждённой до целевого smoke."
           } else {
-            $intro = "Portable-релиз LenSA Proxy ``$env:RELEASE_VERSION`` для Windows."
+            $intro = "Portable-релиз LenSA Proxy ``$env:RELEASE_VERSION`` для Windows. Legacy 386 executable является compatibility-сборкой без подтверждённого runtime smoke на целевой legacy ОС."
           }
           $notes = @(
             $intro
