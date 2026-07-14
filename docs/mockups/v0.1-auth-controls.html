@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LenSA Proxy — варианты управления credentials</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #e7ebf0;
+      --surface: #ffffff;
+      --surface-soft: #f4f6f8;
+      --field: #ffffff;
+      --readonly: #f8fafc;
+      --disabled: #edf0f3;
+      --text: #1f2937;
+      --muted: #5b6574;
+      --border: #cbd2da;
+      --border-strong: #9ca7b5;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --success: #16803c;
+      --danger: #c92a2a;
+      --focus: #1d4ed8;
+      --shadow: 0 18px 48px rgba(31, 41, 55, .16);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 1180px;
+      min-height: 100vh;
+      background: var(--page);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    button, input, select { font: inherit; }
+    button, select, input[type="checkbox"] { cursor: pointer; }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-height: 70px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(247, 248, 250, .97);
+    }
+
+    .toolbar-copy { margin-right: auto; }
+    .toolbar-copy strong { display: block; font-size: 17px; }
+    .toolbar-copy span { color: var(--muted); font-size: 13px; }
+
+    .state-switch {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--surface);
+    }
+
+    .state-switch button {
+      min-height: 34px;
+      padding: 6px 12px;
+      border: 0;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--text);
+    }
+
+    .state-switch button[aria-pressed="true"] {
+      background: #e4e8ed;
+      font-weight: 600;
+    }
+
+    .variants {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(370px, 1fr));
+      gap: 18px;
+      align-items: start;
+      padding: 24px 18px 34px;
+    }
+
+    .variant-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 48px;
+      margin: 0 4px 9px;
+    }
+
+    .variant-heading strong { display: block; font-size: 16px; }
+    .variant-heading span { color: var(--muted); font-size: 12px; }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      border: 1px solid #9ab2d5;
+      border-radius: 4px;
+      background: #e8f0fb;
+      color: #1e4d8d;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .window {
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      background: #f7f8fa;
+      box-shadow: var(--shadow);
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      height: 38px;
+      border-bottom: 1px solid #d3d7dc;
+      background: #f3f3f3;
+      user-select: none;
+    }
+
+    .app-mark {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      background: linear-gradient(145deg, #2563eb, #0f766e);
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .titlebar-title {
+      flex: 1;
+      padding: 0 9px;
+      font-size: 12px;
+    }
+
+    .window-actions { display: flex; align-self: stretch; }
+    .window-actions span { display: grid; width: 38px; place-items: center; }
+    .window-actions span:last-child { font-size: 19px; }
+
+    .body { padding: 15px; }
+    h1 { margin: 0 0 12px; font-size: 21px; }
+    .section-title { margin: 0 6px 6px; font-size: 15px; font-weight: 700; }
+
+    .panel {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+    }
+
+    .settings-panel { margin-bottom: 11px; }
+    .field + .field { margin-top: 8px; }
+
+    label.field-label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select {
+      width: 100%;
+      min-width: 0;
+      height: 32px;
+      padding: 5px 8px;
+      border: 1px solid var(--border-strong);
+      border-radius: 3px;
+      background: var(--field);
+      color: var(--text);
+    }
+
+    input:disabled,
+    select:disabled {
+      cursor: not-allowed;
+      background: var(--disabled);
+      color: #737d89;
+    }
+
+    input[readonly] {
+      cursor: text;
+      background: var(--readonly);
+      color: var(--text);
+    }
+
+    .auth-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 36px;
+      margin-top: 5px;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .check-row input { width: 17px; height: 17px; accent-color: var(--accent); }
+
+    .button {
+      min-height: 32px;
+      padding: 5px 9px;
+      border: 1px solid var(--border-strong);
+      border-radius: 3px;
+      background: #f7f8fa;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .button:hover:not(:disabled) { background: #e9edf2; }
+    .button.primary-lite { border-color: #7e9bc3; background: #eef4fc; color: #173e73; }
+    .button:disabled { cursor: not-allowed; border-color: var(--border); color: #7b8490; background: var(--disabled); }
+
+    .inline-field {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+    }
+
+    .inline-field.password-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+
+    .icon-button {
+      display: grid;
+      width: 34px;
+      min-width: 34px;
+      height: 32px;
+      padding: 0;
+      place-items: center;
+      border: 1px solid var(--border-strong);
+      border-radius: 3px;
+      background: #f7f8fa;
+      color: var(--text);
+    }
+
+    .icon-button:hover:not(:disabled) { background: #e9edf2; }
+    .icon-button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+    .icon-button.copied { border-color: #56a36e; background: #e8f6ec; color: #146c32; }
+
+    .split-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .split-fields .field + .field { margin-top: 0; }
+
+    .action-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 7px;
+    }
+
+    .action-strip .button { width: 100%; }
+
+    .status-panel { padding: 13px 14px 15px; }
+
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .status-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 0 3px rgba(22, 128, 60, .14);
+    }
+
+    .status-description { margin: 3px 0 9px 22px; color: var(--muted); font-size: 12px; }
+
+    .connection-list {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--surface-soft);
+    }
+
+    .connection-row {
+      display: grid;
+      grid-template-columns: 62px minmax(0, 1fr) auto;
+      align-items: center;
+      min-height: 34px;
+    }
+
+    .connection-row + .connection-row { border-top: 1px solid var(--border); }
+    .connection-row > span { padding-left: 8px; color: var(--muted); font-size: 11px; }
+    .connection-row code { overflow: hidden; padding: 0 7px; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .connection-row.password-output { grid-template-columns: 62px minmax(0, 1fr) auto auto; }
+
+    .connection-row .icon-button {
+      align-self: stretch;
+      width: 38px;
+      height: auto;
+      border-width: 0 0 0 1px;
+      border-color: var(--border);
+      border-radius: 0;
+      background: var(--surface);
+    }
+
+    .small-button {
+      align-self: stretch;
+      min-width: 72px;
+      padding: 0 8px;
+      border: 0;
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 11px;
+    }
+
+    .small-button:hover { background: #e9edf2; }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 0 6px;
+    }
+
+    .meta-row span { display: block; color: var(--muted); font-size: 10px; }
+    .meta-row strong { font-size: 12px; }
+
+    .main-button {
+      width: 100%;
+      min-height: 39px;
+      margin-top: 9px;
+      border: 0;
+      border-radius: 4px;
+      background: var(--danger);
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .state-note {
+      min-height: 38px;
+      margin: 8px 4px 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    body[data-state="stopped"] .main-button { background: var(--accent); }
+    body[data-state="stopped"] .status-dot {
+      border: 2px solid #7c8797;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .stopped-only { display: none; }
+    body[data-state="stopped"] .stopped-only { display: inline; }
+    body[data-state="stopped"] .running-only { display: none; }
+
+    @media (max-width: 1250px) {
+      body { min-width: 780px; }
+      .variants { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body data-state="running">
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute">
+    <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="1"></rect><path d="M16 8V5H5v11h3"></path></symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"></path><circle cx="12" cy="12" r="2.5"></circle></symbol>
+    <symbol id="icon-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18"></path><path d="M9.4 7.4A10.5 10.5 0 0 1 12 7c6 0 9.5 5 9.5 5a15 15 0 0 1-2.1 2.6M14.6 16.6A10.5 10.5 0 0 1 12 17c-6 0-9.5-5-9.5-5a15 15 0 0 1 2.1-2.6"></path></symbol>
+  </svg>
+  <header class="toolbar">
+    <div class="toolbar-copy">
+      <strong>LenSA Proxy — credentials UX</strong>
+      <span>Три варианта на базе принятого вертикального Win32 UI</span>
+    </div>
+    <div class="state-switch" aria-label="Состояние preview">
+      <button type="button" data-state="stopped" aria-pressed="false">Редактирование</button>
+      <button type="button" data-state="running" aria-pressed="true">Работает</button>
+    </div>
+  </header>
+
+  <main class="variants">
+    <section class="variant" data-variant="a">
+      <div class="variant-heading">
+        <div><strong>A — Действия у полей</strong><span>Credentials остаются selectable/read-only во время работы</span></div>
+        <div class="badge">Выбран</div>
+      </div>
+      <div class="window">
+        <div class="titlebar"><div class="app-mark">LP</div><div class="titlebar-title">LenSA Proxy — Управление</div><div class="window-actions"><span>—</span><span>×</span></div></div>
+        <div class="body">
+          <h1>LenSA Proxy</h1>
+          <div class="section-title">Подключение</div>
+          <section class="panel settings-panel">
+            <div class="field"><label class="field-label">Сетевой интерфейс</label><select class="locked"><option>Ethernet · 192.168.1.80/24</option></select></div>
+            <div class="field"><label class="field-label">Порт</label><input class="locked" type="number" value="8080"></div>
+            <div class="auth-head">
+              <label class="check-row"><input class="locked" type="checkbox" checked> Требовать авторизацию</label>
+              <button class="button primary-lite generate" type="button">Сгенерировать</button>
+            </div>
+            <div class="field"><label class="field-label">Логин</label><div class="inline-field"><input class="credential" type="text" value="lensa-4f7c"><button class="icon-button copy" type="button" data-copy="login" aria-label="Копировать логин" title="Копировать логин"><svg><use href="#icon-copy"></use></svg></button></div></div>
+            <div class="field"><label class="field-label">Пароль</label><div class="inline-field password-row"><input class="credential password" type="password" value="M7qK9xW4pR2vN8cT"><button class="icon-button reveal" type="button" aria-label="Показать пароль" title="Показать пароль"><svg><use href="#icon-eye"></use></svg></button><button class="icon-button copy" type="button" data-copy="password" aria-label="Копировать пароль" title="Копировать пароль"><svg><use href="#icon-copy"></use></svg></button></div></div>
+          </section>
+          <section class="panel status-panel">
+            <div class="status-line"><span class="status-dot"></span><span class="status-label">РАБОТАЕТ</span></div>
+            <p class="status-description">Прокси доступен в локальной сети</p>
+            <div class="connection-list">
+              <div class="connection-row"><span>Хост</span><code>192.168.1.80</code><button class="icon-button copy" type="button" data-copy="host" aria-label="Копировать хост" title="Копировать хост"><svg><use href="#icon-copy"></use></svg></button></div>
+              <div class="connection-row"><span>Порт</span><code>8080</code><button class="icon-button copy" type="button" data-copy="port" aria-label="Копировать порт" title="Копировать порт"><svg><use href="#icon-copy"></use></svg></button></div>
+            </div>
+            <div class="meta-row"><div><span>Клиенты</span><strong>1</strong></div><div><span>Сеть</span><strong>LAN only</strong></div></div>
+            <button class="main-button" type="button"><span class="running-only">Остановить</span><span class="stopped-only">Запустить</span></button>
+          </section>
+        </div>
+      </div>
+      <p class="state-note">Формат 1С без ручного разбора: host и port копируются отдельно. Во время Running credentials доступны для выделения, раскрытия и копирования.</p>
+    </section>
+
+    <section class="variant" data-variant="b">
+      <div class="variant-heading">
+        <div><strong>B — Данные подключения</strong><span>Настройки блокируются, копируемые значения живут в status card</span></div>
+      </div>
+      <div class="window">
+        <div class="titlebar"><div class="app-mark">LP</div><div class="titlebar-title">LenSA Proxy — Управление</div><div class="window-actions"><span>—</span><span>×</span></div></div>
+        <div class="body">
+          <h1>LenSA Proxy</h1>
+          <div class="section-title">Подключение</div>
+          <section class="panel settings-panel">
+            <div class="field"><label class="field-label">Сетевой интерфейс</label><select class="locked"><option>Ethernet · 192.168.1.80/24</option></select></div>
+            <div class="field"><label class="field-label">Порт</label><input class="locked" type="number" value="8080"></div>
+            <div class="auth-head"><label class="check-row"><input class="locked" type="checkbox" checked> Требовать авторизацию</label><button class="button primary-lite generate" type="button">Сгенерировать</button></div>
+            <div class="split-fields">
+              <div class="field"><label class="field-label">Логин</label><input class="locked source-login" type="text" value="lensa-4f7c"></div>
+              <div class="field"><label class="field-label">Пароль</label><input class="locked source-password" type="password" value="M7qK9xW4pR2vN8cT"></div>
+            </div>
+          </section>
+          <section class="panel status-panel">
+            <div class="status-line"><span class="status-dot"></span><span class="status-label">РАБОТАЕТ</span></div>
+            <p class="status-description">Данные для подключения клиента</p>
+            <div class="connection-list">
+              <div class="connection-row"><span>Адрес</span><code>192.168.1.80:8080</code><button class="small-button copy" type="button">Копировать</button></div>
+              <div class="connection-row"><span>Логин</span><code class="output-login">lensa-4f7c</code><button class="small-button copy" type="button" data-copy="login">Копировать</button></div>
+              <div class="connection-row password-output"><span>Пароль</span><code class="output-password" data-value="M7qK9xW4pR2vN8cT">••••••••••••••••</code><button class="small-button reveal-output" type="button">Показать</button><button class="small-button copy" type="button" data-copy="password">Копировать</button></div>
+            </div>
+            <div class="meta-row"><div><span>Клиенты</span><strong>1</strong></div><div><span>Сеть</span><strong>LAN only</strong></div></div>
+            <button class="main-button" type="button"><span class="running-only">Остановить</span><span class="stopped-only">Запустить</span></button>
+          </section>
+        </div>
+      </div>
+      <p class="state-note">Самый очевидный handoff в 1С: address/login/password собраны вместе. Цена — значения дублируются между настройками и статусом.</p>
+    </section>
+
+    <section class="variant" data-variant="c">
+      <div class="variant-heading">
+        <div><strong>C — Панель действий</strong><span>Сохраняет текущие две колонки и добавляет четыре команды</span></div>
+      </div>
+      <div class="window">
+        <div class="titlebar"><div class="app-mark">LP</div><div class="titlebar-title">LenSA Proxy — Управление</div><div class="window-actions"><span>—</span><span>×</span></div></div>
+        <div class="body">
+          <h1>LenSA Proxy</h1>
+          <div class="section-title">Подключение</div>
+          <section class="panel settings-panel">
+            <div class="field"><label class="field-label">Сетевой интерфейс</label><select class="locked"><option>Ethernet · 192.168.1.80/24</option></select></div>
+            <div class="field"><label class="field-label">Порт</label><input class="locked" type="number" value="8080"></div>
+            <div class="auth-head"><label class="check-row"><input class="locked" type="checkbox" checked> Требовать авторизацию</label></div>
+            <div class="split-fields">
+              <div class="field"><label class="field-label">Логин</label><input class="credential" type="text" value="lensa-4f7c"></div>
+              <div class="field"><label class="field-label">Пароль</label><input class="credential password" type="password" value="M7qK9xW4pR2vN8cT"></div>
+            </div>
+            <div class="action-strip">
+              <button class="button primary-lite generate" type="button">Сгенерировать пару</button>
+              <button class="button reveal" type="button">Показать пароль</button>
+              <button class="button copy" type="button" data-copy="login">Копировать логин</button>
+              <button class="button copy" type="button" data-copy="password">Копировать пароль</button>
+            </div>
+          </section>
+          <section class="panel status-panel">
+            <div class="status-line"><span class="status-dot"></span><span class="status-label">РАБОТАЕТ</span></div>
+            <p class="status-description">Прокси доступен в локальной сети</p>
+            <div class="connection-list"><div class="connection-row"><span>Адрес</span><code>192.168.1.80:8080</code><button class="small-button copy" type="button">Копировать</button></div></div>
+            <div class="meta-row"><div><span>Клиенты</span><strong>1</strong></div><div><span>Сеть</span><strong>LAN only</strong></div></div>
+            <button class="main-button" type="button"><span class="running-only">Остановить</span><span class="stopped-only">Запустить</span></button>
+          </section>
+        </div>
+      </div>
+      <p class="state-note">Самая простая перестройка текущего layout, но четыре одинаково заметные кнопки создают больше визуального шума и Tab-stop’ов.</p>
+    </section>
+  </main>
+
+  <script>
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+    function randomText(length) {
+      const values = new Uint32Array(length);
+      crypto.getRandomValues(values);
+      return Array.from(values, value => alphabet[value % alphabet.length]).join('');
+    }
+
+    function credentialsFor(variant) {
+      const login = variant.querySelector('.credential:not(.password), .source-login');
+      const password = variant.querySelector('.password, .source-password');
+      return { login, password };
+    }
+
+    function syncOutputs(variant) {
+      const { login, password } = credentialsFor(variant);
+      const outputLogin = variant.querySelector('.output-login');
+      const outputPassword = variant.querySelector('.output-password');
+      if (outputLogin) outputLogin.textContent = login.value;
+      if (outputPassword) {
+        outputPassword.dataset.value = password.value;
+        if (outputPassword.dataset.visible === 'true') outputPassword.textContent = password.value;
+      }
+    }
+
+    function applyState(state) {
+      document.body.dataset.state = state;
+      document.querySelectorAll('[data-state]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.state === state)));
+      document.querySelectorAll('.variant').forEach(variant => {
+        const running = state === 'running';
+        variant.querySelectorAll('.locked').forEach(control => { control.disabled = running; });
+        variant.querySelectorAll('.credential').forEach(control => { control.readOnly = running; });
+        variant.querySelectorAll('.generate').forEach(button => { button.disabled = running; });
+        variant.querySelector('.status-label').textContent = running ? 'РАБОТАЕТ' : 'ОСТАНОВЛЕН';
+        variant.querySelector('.status-description').textContent = running ? (variant.dataset.variant === 'b' ? 'Данные для подключения клиента' : 'Прокси доступен в локальной сети') : 'Готов к запуску';
+      });
+    }
+
+    document.querySelectorAll('[data-state]').forEach(button => button.addEventListener('click', () => applyState(button.dataset.state)));
+
+    document.querySelectorAll('.generate').forEach(button => button.addEventListener('click', () => {
+      const variant = button.closest('.variant');
+      const { login, password } = credentialsFor(variant);
+      login.value = `lensa-${randomText(6).toLowerCase()}`;
+      password.value = randomText(18);
+      syncOutputs(variant);
+    }));
+
+    document.querySelectorAll('.reveal').forEach(button => button.addEventListener('click', () => {
+      const variant = button.closest('.variant');
+      const password = credentialsFor(variant).password;
+      const visible = password.type === 'text';
+      password.type = visible ? 'password' : 'text';
+      const label = visible ? 'Показать пароль' : 'Скрыть пароль';
+      if (button.classList.contains('icon-button')) {
+        button.setAttribute('aria-label', label);
+        button.title = label;
+        button.querySelector('use').setAttribute('href', visible ? '#icon-eye' : '#icon-eye-off');
+      } else {
+        button.textContent = variant.dataset.variant === 'c' ? label : (visible ? 'Показать' : 'Скрыть');
+      }
+    }));
+
+    document.querySelectorAll('.reveal-output').forEach(button => button.addEventListener('click', () => {
+      const output = button.closest('.password-output').querySelector('.output-password');
+      const visible = output.dataset.visible === 'true';
+      output.dataset.visible = String(!visible);
+      output.textContent = visible ? '••••••••••••••••' : output.dataset.value;
+      button.textContent = visible ? 'Показать' : 'Скрыть';
+    }));
+
+    document.querySelectorAll('.copy').forEach(button => button.addEventListener('click', async () => {
+      const variant = button.closest('.variant');
+      const kind = button.dataset.copy;
+      let text = '192.168.1.80:8080';
+      if (kind === 'host') text = '192.168.1.80';
+      if (kind === 'port') text = '8080';
+      if (kind === 'login' || kind === 'password') text = credentialsFor(variant)[kind].value;
+      await navigator.clipboard.writeText(text);
+      if (button.classList.contains('icon-button')) {
+        button.classList.add('copied');
+        setTimeout(() => { button.classList.remove('copied'); }, 900);
+      } else {
+        const original = button.textContent;
+        button.textContent = 'Скопировано';
+        setTimeout(() => { button.textContent = original; }, 900);
+      }
+    }));
+
+    document.querySelectorAll('.credential, .source-login, .source-password').forEach(input => input.addEventListener('input', () => syncOutputs(input.closest('.variant'))));
+    applyState('running');
+  </script>
+</body>
+</html>

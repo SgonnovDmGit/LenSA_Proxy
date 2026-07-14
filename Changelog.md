@@ -19,6 +19,8 @@
 - Добавлены modern amd64 и legacy Windows 386 build scripts с icon/manifest resources.
 - Настроены modern verification и legacy artifact jobs в CI.
 - Добавлена tag-triggered публикация GitHub Release с двумя executable и SHA-256 checksums.
+- Добавлены cryptographic generator, reveal и отдельное копирование login/password.
+- Добавлены отдельные копируемые host/port в формате настроек `LenSA_Query`.
 
 ### Security
 
@@ -30,6 +32,7 @@
 ### Changed
 
 - MVP сокращён до одного русского системного UI без тем, persistence, tray и firewall automation.
+- Credentials остаются selectable read-only во время работы proxy; изменяемые сетевые настройки по-прежнему заблокированы.
 
 ### Fixed
 

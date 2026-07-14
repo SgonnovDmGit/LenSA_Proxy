@@ -4,12 +4,15 @@ package windows
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf16"
+	"unsafe"
 
 	"github.com/SgonnovDmGit/LenSA_Proxy/internal/domain/proxy"
 	"github.com/rodrigocfd/windigo/co"
@@ -30,7 +33,26 @@ const (
 const windowStyle = co.WS_CAPTION | co.WS_SYSMENU | co.WS_CLIPCHILDREN | co.WS_BORDER |
 	co.WS_VISIBLE | co.WS_MINIMIZEBOX
 
-const dialogSetDefaultID co.WM = co.WM_USER + 1
+const (
+	dialogSetDefaultID    co.WM = co.WM_USER + 1
+	tooltipAddToolMessage co.WM = co.WM_USER + 50
+	tooltipAlwaysTip      co.WS = 0x01
+	tooltipNoPrefix       co.WS = 0x02
+	tooltipUseWindowID          = 0x0001
+	tooltipSubclass             = 0x0010
+)
+
+type tooltipInfo struct {
+	size     uint32
+	flags    uint32
+	parent   win.HWND
+	id       uintptr
+	rect     win.RECT
+	instance win.HINSTANCE
+	text     *uint16
+	param    win.LPARAM
+	reserved uintptr
+}
 
 type Service interface {
 	Interfaces() ([]proxy.NetworkInterface, error)
@@ -45,6 +67,14 @@ const (
 	operationNone operation = iota
 	operationStart
 	operationStop
+)
+
+type iconKind uint8
+
+const (
+	iconCopy iconKind = iota
+	iconEye
+	iconEyeOff
 )
 
 type operationResult struct {
@@ -65,47 +95,63 @@ type windowResources struct {
 	sectionFont      win.HFONT
 	statusFont       win.HFONT
 	buttonFont       win.HFONT
+	iconPen          win.HPEN
+	disabledIconPen  win.HPEN
 	ownedBrushes     []win.HBRUSH
 	ownedFonts       []win.HFONT
+	ownedPens        []win.HPEN
 }
 
 type appWindow struct {
-	service     Service
-	interfaces  []proxy.NetworkInterface
-	resources   *windowResources
-	wnd         *ui.Main
-	title       *ui.Static
-	section     *ui.Static
-	settingsBox []*ui.Static
-	statusBox   []*ui.Static
-	muted       []*ui.Static
-	ifaceLabel  *ui.Static
-	iface       *ui.ComboBox
-	portLabel   *ui.Static
-	port        *ui.Edit
-	auth        *ui.CheckBox
-	loginLabel  *ui.Static
-	login       *ui.Edit
-	passLabel   *ui.Static
-	password    *ui.Edit
-	statusDot   *ui.Static
-	statusText  *ui.Static
-	description *ui.Static
-	address     *ui.Edit
-	copyButton  *ui.Button
-	clientsName *ui.Static
-	clients     *ui.Static
-	networkName *ui.Static
-	network     *ui.Static
-	action      *ui.Button
-	results     chan operationResult
-	closeResult chan bool
-	inFlight    operation
-	pending     proxy.Config
-	current     viewModel
-	ready       bool
-	closing     bool
-	timer       bool
+	service         Service
+	interfaces      []proxy.NetworkInterface
+	resources       *windowResources
+	wnd             *ui.Main
+	title           *ui.Static
+	section         *ui.Static
+	settingsBox     []*ui.Static
+	statusBox       []*ui.Static
+	muted           []*ui.Static
+	ifaceLabel      *ui.Static
+	iface           *ui.ComboBox
+	portLabel       *ui.Static
+	port            *ui.Edit
+	auth            *ui.CheckBox
+	generate        *ui.Button
+	loginLabel      *ui.Static
+	login           *ui.Edit
+	copyLogin       *ui.Button
+	passLabel       *ui.Static
+	password        *ui.Edit
+	revealPassword  *ui.Button
+	copyPassword    *ui.Button
+	statusDot       *ui.Static
+	statusText      *ui.Static
+	description     *ui.Static
+	hostLabel       *ui.Static
+	host            *ui.Edit
+	copyHost        *ui.Button
+	outputPortLabel *ui.Static
+	outputPort      *ui.Edit
+	copyPort        *ui.Button
+	clientsName     *ui.Static
+	clients         *ui.Static
+	networkName     *ui.Static
+	network         *ui.Static
+	action          *ui.Button
+	results         chan operationResult
+	closeResult     chan bool
+	inFlight        operation
+	pending         proxy.Config
+	current         viewModel
+	ready           bool
+	closing         bool
+	timer           bool
+	passwordVisible bool
+	passwordMask    win.WPARAM
+	tooltip         win.HWND
+	tooltipTexts    [][]uint16
+	tooltipInfos    []*tooltipInfo
 }
 
 func Run(service Service) (int, error) {
@@ -174,12 +220,12 @@ func (w *appWindow) createControls() {
 
 	settingsFill := ui.NewStatic(w.wnd, ui.OptsStatic().
 		Position(ui.Dpi(20, 84)).
-		Size(ui.Dpi(520, 242)).
+		Size(ui.Dpi(520, 282)).
 		CtrlStyle(co.SS_WHITERECT).
 		Layout(resize))
 	settingsFrame := ui.NewStatic(w.wnd, ui.OptsStatic().
 		Position(ui.Dpi(20, 84)).
-		Size(ui.Dpi(520, 242)).
+		Size(ui.Dpi(520, 282)).
 		CtrlStyle(co.SS_ETCHEDFRAME).
 		Layout(resize))
 	w.ifaceLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
@@ -218,101 +264,156 @@ func (w *appWindow) createControls() {
 	w.auth = ui.NewCheckBox(w.wnd, ui.OptsCheckBox().
 		Text("Требовать авторизацию").
 		Position(ui.Dpi(37, 212)).
-		Size(ui.Dpi(486, 28)).
-		Layout(resize))
+		Size(ui.Dpi(330, 28)).
+		Layout(ui.LAY_HOLD_HOLD))
+	w.generate = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Сгенерировать").
+		Position(ui.Dpi(387, 212)).
+		Width(ui.DpiX(136)).
+		Height(ui.DpiY(28)).
+		Layout(ui.LAY_MOVE_HOLD))
 	w.loginLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Логин").
 		Position(ui.Dpi(37, 246)).
-		Size(ui.Dpi(236, 18)).
+		Size(ui.Dpi(486, 18)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
-		Layout(ui.LAY_HOLD_HOLD))
+		Layout(resize))
 	w.login = ui.NewEdit(w.wnd, ui.OptsEdit().
 		Position(ui.Dpi(37, 267)).
-		Width(ui.DpiX(236)).
+		Width(ui.DpiX(444)).
 		Height(ui.DpiY(27)).
-		Layout(ui.LAY_HOLD_HOLD))
+		Layout(resize))
+	w.copyLogin = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Копировать логин").
+		Position(ui.Dpi(489, 267)).
+		Width(ui.DpiX(34)).
+		Height(ui.DpiY(27)).
+		CtrlStyle(co.BS_OWNERDRAW).
+		Layout(ui.LAY_MOVE_HOLD))
 	w.passLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Пароль").
-		Position(ui.Dpi(287, 246)).
-		Size(ui.Dpi(236, 18)).
+		Position(ui.Dpi(37, 302)).
+		Size(ui.Dpi(486, 18)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
-		Layout(ui.LAY_MOVE_HOLD))
+		Layout(resize))
 	w.password = ui.NewEdit(w.wnd, ui.OptsEdit().
-		Position(ui.Dpi(287, 267)).
-		Width(ui.DpiX(236)).
+		Position(ui.Dpi(37, 323)).
+		Width(ui.DpiX(400)).
 		Height(ui.DpiY(27)).
 		CtrlStyle(co.ES_AUTOHSCROLL|co.ES_NOHIDESEL|co.ES_PASSWORD).
+		Layout(resize))
+	w.revealPassword = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Показать пароль").
+		Position(ui.Dpi(445, 323)).
+		Width(ui.DpiX(34)).
+		Height(ui.DpiY(27)).
+		CtrlStyle(co.BS_OWNERDRAW).
+		Layout(ui.LAY_MOVE_HOLD))
+	w.copyPassword = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Копировать пароль").
+		Position(ui.Dpi(489, 323)).
+		Width(ui.DpiX(34)).
+		Height(ui.DpiY(27)).
+		CtrlStyle(co.BS_OWNERDRAW).
 		Layout(ui.LAY_MOVE_HOLD))
 	w.settingsBox = []*ui.Static{settingsFill, settingsFrame, w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel}
 
 	statusFill := ui.NewStatic(w.wnd, ui.OptsStatic().
-		Position(ui.Dpi(20, 341)).
-		Size(ui.Dpi(520, 239)).
+		Position(ui.Dpi(20, 375)).
+		Size(ui.Dpi(520, 205)).
 		CtrlStyle(co.SS_WHITERECT).
 		Layout(ui.LAY_RESIZE_RESIZE))
 	statusFrame := ui.NewStatic(w.wnd, ui.OptsStatic().
-		Position(ui.Dpi(20, 341)).
-		Size(ui.Dpi(520, 239)).
+		Position(ui.Dpi(20, 375)).
+		Size(ui.Dpi(520, 205)).
 		CtrlStyle(co.SS_ETCHEDFRAME).
 		Layout(ui.LAY_RESIZE_RESIZE))
 	w.statusDot = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("●").
-		Position(ui.Dpi(38, 356)).
+		Position(ui.Dpi(38, 386)).
 		Size(ui.Dpi(22, 26)).
 		CtrlStyle(co.SS_CENTER|co.SS_CENTERIMAGE|co.SS_NOPREFIX))
 	w.statusText = ui.NewStatic(w.wnd, ui.OptsStatic().
-		Position(ui.Dpi(66, 358)).
+		Position(ui.Dpi(66, 388)).
 		Size(ui.Dpi(456, 24)).
 		CtrlStyle(co.SS_LEFT|co.SS_CENTERIMAGE|co.SS_NOPREFIX).
 		Layout(resize))
 	w.description = ui.NewStatic(w.wnd, ui.OptsStatic().
-		Position(ui.Dpi(66, 385)).
-		Size(ui.Dpi(456, 20)).
+		Position(ui.Dpi(66, 413)).
+		Size(ui.Dpi(456, 18)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
 		Layout(resize))
-	w.address = ui.NewEdit(w.wnd, ui.OptsEdit().
-		Position(ui.Dpi(38, 413)).
-		Width(ui.DpiX(388)).
-		Height(ui.DpiY(32)).
+	w.hostLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
+		Text("Хост").
+		Position(ui.Dpi(38, 438)).
+		Size(ui.Dpi(50, 28)).
+		CtrlStyle(co.SS_LEFT|co.SS_CENTERIMAGE|co.SS_NOPREFIX))
+	w.host = ui.NewEdit(w.wnd, ui.OptsEdit().
+		Position(ui.Dpi(88, 438)).
+		Width(ui.DpiX(393)).
+		Height(ui.DpiY(28)).
 		CtrlStyle(co.ES_AUTOHSCROLL|co.ES_READONLY).
 		WndStyle(co.WS_CHILD|co.WS_VISIBLE).
 		Layout(resize))
-	w.copyButton = ui.NewButton(w.wnd, ui.OptsButton().
-		Text("Копировать").
-		Position(ui.Dpi(426, 413)).
-		Width(ui.DpiX(96)).
-		Height(ui.DpiY(32)).
+	w.copyHost = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Копировать хост").
+		Position(ui.Dpi(489, 438)).
+		Width(ui.DpiX(34)).
+		Height(ui.DpiY(28)).
+		CtrlStyle(co.BS_OWNERDRAW).
+		Layout(ui.LAY_MOVE_HOLD))
+	w.outputPortLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
+		Text("Порт").
+		Position(ui.Dpi(38, 470)).
+		Size(ui.Dpi(50, 28)).
+		CtrlStyle(co.SS_LEFT|co.SS_CENTERIMAGE|co.SS_NOPREFIX))
+	w.outputPort = ui.NewEdit(w.wnd, ui.OptsEdit().
+		Position(ui.Dpi(88, 470)).
+		Width(ui.DpiX(393)).
+		Height(ui.DpiY(28)).
+		CtrlStyle(co.ES_AUTOHSCROLL|co.ES_READONLY).
+		WndStyle(co.WS_CHILD|co.WS_VISIBLE).
+		Layout(resize))
+	w.copyPort = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Копировать порт").
+		Position(ui.Dpi(489, 470)).
+		Width(ui.DpiX(34)).
+		Height(ui.DpiY(28)).
+		CtrlStyle(co.BS_OWNERDRAW).
 		Layout(ui.LAY_MOVE_HOLD))
 	w.clientsName = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Клиенты").
-		Position(ui.Dpi(38, 461)).
-		Size(ui.Dpi(200, 18)).
+		Position(ui.Dpi(38, 503)).
+		Size(ui.Dpi(200, 16)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.clients = ui.NewStatic(w.wnd, ui.OptsStatic().
-		Position(ui.Dpi(38, 480)).
-		Size(ui.Dpi(200, 20)).
+		Position(ui.Dpi(38, 519)).
+		Size(ui.Dpi(200, 17)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.networkName = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Сеть").
-		Position(ui.Dpi(280, 461)).
-		Size(ui.Dpi(242, 18)).
+		Position(ui.Dpi(280, 503)).
+		Size(ui.Dpi(242, 16)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.network = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("LAN only").
-		Position(ui.Dpi(280, 480)).
-		Size(ui.Dpi(242, 20)).
+		Position(ui.Dpi(280, 519)).
+		Size(ui.Dpi(242, 17)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.action = ui.NewButton(w.wnd, ui.OptsButton().
-		Position(ui.Dpi(38, 520)).
+		Position(ui.Dpi(38, 540)).
 		Width(ui.DpiX(484)).
-		Height(ui.DpiY(42)).
+		Height(ui.DpiY(34)).
 		CtrlStyle(co.BS_OWNERDRAW).
 		Layout(resize))
 	w.statusBox = []*ui.Static{
 		statusFill, statusFrame, w.statusDot, w.statusText, w.description,
-		w.clientsName, w.clients, w.networkName, w.network,
+		w.hostLabel, w.outputPortLabel, w.clientsName, w.clients, w.networkName, w.network,
 	}
-	w.muted = []*ui.Static{w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel, w.description, w.clientsName, w.networkName}
+	w.muted = []*ui.Static{
+		w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel, w.description,
+		w.hostLabel, w.outputPortLabel, w.clientsName, w.networkName,
+	}
 }
 
 func (w *appWindow) bindEvents() {
@@ -322,16 +423,32 @@ func (w *appWindow) bindEvents() {
 		if !w.ready {
 			return
 		}
+		if !w.auth.IsChecked() {
+			w.setPasswordVisible(false)
+		}
 		w.updateFormEnabled()
 		w.refresh()
 	})
-	w.copyButton.On().BnClicked(w.copyAddress)
+	w.login.On().EnChange(w.updateFormEnabled)
+	w.password.On().EnChange(w.updateFormEnabled)
+	w.generate.On().BnClicked(w.generateCredentials)
+	w.copyLogin.On().BnClicked(func() { w.copyText(w.login.Text(), "Не удалось скопировать логин") })
+	w.revealPassword.On().BnClicked(func() { w.setPasswordVisible(!w.passwordVisible) })
+	w.copyPassword.On().BnClicked(func() { w.copyText(w.password.Text(), "Не удалось скопировать пароль") })
+	w.copyHost.On().BnClicked(func() { w.copyText(w.host.Text(), "Не удалось скопировать хост") })
+	w.copyPort.On().BnClicked(func() { w.copyText(w.outputPort.Text(), "Не удалось скопировать порт") })
 	w.action.On().BnClicked(w.onAction)
 	w.wnd.On().WmCreate(func(ui.WmCreate) int {
 		w.applyFonts()
 		w.port.LimitText(5)
 		w.login.LimitText(128)
 		w.password.LimitText(128)
+		passwordMask, _ := w.password.Hwnd().SendMessage(co.EM_GETPASSWORDCHAR, 0, 0)
+		w.passwordMask = win.WPARAM(passwordMask)
+		if w.passwordMask == 0 {
+			w.passwordMask = '*'
+		}
+		w.installTooltips()
 		w.wnd.Hwnd().SendMessage(dialogSetDefaultID, win.WPARAM(w.action.CtrlId()), 0)
 		w.ready = true
 		if w.wnd.Hwnd().SetTimer(snapshotTimerID, snapshotInterval) == nil {
@@ -348,16 +465,31 @@ func (w *appWindow) bindEvents() {
 	w.wnd.On().WmCtlColorStatic(w.colorStatic)
 	w.wnd.On().WmCtlColorBtn(w.colorButton)
 	w.wnd.On().WmDrawItem(func(event ui.WmDrawItem) {
-		if event.ControlId() != int(w.action.CtrlId()) {
-			return
+		controlID := event.ControlId()
+		switch controlID {
+		case int(w.action.CtrlId()):
+			drawActionButton(event.DrawItemStruct(), w.current, w.resources)
+		case int(w.copyLogin.CtrlId()), int(w.copyPassword.CtrlId()), int(w.copyHost.CtrlId()), int(w.copyPort.CtrlId()):
+			drawIconButton(event.DrawItemStruct(), iconCopy, w.resources)
+		case int(w.revealPassword.CtrlId()):
+			kind := iconEye
+			if w.passwordVisible {
+				kind = iconEyeOff
+			}
+			drawIconButton(event.DrawItemStruct(), kind, w.resources)
 		}
-		drawActionButton(event.DrawItemStruct(), w.current, w.resources)
 	})
 	w.wnd.On().WmClose(w.close)
 	w.wnd.On().WmDestroy(func() {
 		if w.timer {
 			_ = w.wnd.Hwnd().KillTimer(snapshotTimerID)
 		}
+		if w.tooltip != 0 {
+			_ = w.tooltip.DestroyWindow()
+			w.tooltip = 0
+		}
+		w.tooltipInfos = nil
+		w.tooltipTexts = nil
 	})
 }
 
@@ -506,14 +638,20 @@ func (w *appWindow) applyView(model viewModel) {
 		w.updateFormEnabled()
 		return
 	}
+	if model.formEnabled != w.current.formEnabled {
+		w.setPasswordVisible(false)
+	}
 	w.current = model
 	w.statusText.Hwnd().SetWindowText(model.status)
 	w.description.Hwnd().SetWindowText(model.description)
-	w.address.SetText(model.address)
+	host, port := connectionParts(model.address)
+	w.host.SetText(host)
+	w.outputPort.SetText(port)
 	w.clients.Hwnd().SetWindowText(model.clients)
 	w.action.SetText(model.actionText)
 	w.action.Hwnd().EnableWindow(model.actionEnabled && !w.closing)
-	w.copyButton.Hwnd().EnableWindow(model.address != "—" && !w.closing)
+	w.copyHost.Hwnd().EnableWindow(host != "—" && !w.closing)
+	w.copyPort.Hwnd().EnableWindow(port != "—" && !w.closing)
 	w.updateFormEnabled()
 	_ = w.statusDot.Hwnd().InvalidateRect(nil, true)
 	_ = w.statusText.Hwnd().InvalidateRect(nil, true)
@@ -522,13 +660,19 @@ func (w *appWindow) applyView(model viewModel) {
 }
 
 func (w *appWindow) updateFormEnabled() {
-	enabled := w.current.formEnabled && !w.closing
-	w.iface.Hwnd().EnableWindow(enabled)
-	w.port.Hwnd().EnableWindow(enabled)
-	w.auth.Hwnd().EnableWindow(enabled)
-	authEnabled := enabled && w.auth.IsChecked()
-	w.login.Hwnd().EnableWindow(authEnabled)
-	w.password.Hwnd().EnableWindow(authEnabled)
+	formEnabled := w.current.formEnabled && !w.closing
+	w.iface.Hwnd().EnableWindow(formEnabled)
+	w.port.Hwnd().EnableWindow(formEnabled)
+	w.auth.Hwnd().EnableWindow(formEnabled)
+	state := mapAuthControlState(formEnabled, w.auth.IsChecked(), w.closing, w.login.Text(), w.password.Text())
+	w.login.Hwnd().EnableWindow(state.credentialsEnabled)
+	w.password.Hwnd().EnableWindow(state.credentialsEnabled)
+	w.login.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(state.credentialsReadOnly), 0)
+	w.password.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(state.credentialsReadOnly), 0)
+	w.generate.Hwnd().EnableWindow(state.generateEnabled)
+	w.copyLogin.Hwnd().EnableWindow(state.copyLoginEnabled)
+	w.revealPassword.Hwnd().EnableWindow(state.passwordActionEnabled)
+	w.copyPassword.Hwnd().EnableWindow(state.passwordActionEnabled)
 }
 
 func (w *appWindow) close() {
@@ -561,14 +705,94 @@ func (w *appWindow) close() {
 	}()
 }
 
-func (w *appWindow) copyAddress() {
-	address := strings.TrimSpace(w.address.Text())
-	if address == "" || address == "—" {
+func (w *appWindow) installTooltips() {
+	tooltip, err := win.CreateWindowEx(
+		0,
+		win.ClassNameStr("tooltips_class32"),
+		"",
+		co.WS_POPUP|tooltipAlwaysTip|tooltipNoPrefix,
+		win.POINT{},
+		win.SIZE{},
+		w.wnd.Hwnd(),
+		0,
+		0,
+		0,
+	)
+	if err != nil {
 		return
 	}
-	if err := setClipboardText(w.wnd.Hwnd(), address); err != nil {
-		w.showError("Не удалось скопировать адрес")
+	w.tooltip = tooltip
+	tools := []struct {
+		button *ui.Button
+		text   string
+	}{
+		{w.copyLogin, "Копировать логин"},
+		{w.revealPassword, "Показать или скрыть пароль"},
+		{w.copyPassword, "Копировать пароль"},
+		{w.copyHost, "Копировать хост"},
+		{w.copyPort, "Копировать порт"},
 	}
+	for _, tool := range tools {
+		text, err := syscall.UTF16FromString(tool.text)
+		if err != nil {
+			continue
+		}
+		w.tooltipTexts = append(w.tooltipTexts, text)
+		info := &tooltipInfo{
+			size:   uint32(unsafe.Sizeof(tooltipInfo{})),
+			flags:  tooltipUseWindowID | tooltipSubclass,
+			parent: w.wnd.Hwnd(),
+			id:     uintptr(tool.button.Hwnd()),
+			text:   &text[0],
+		}
+		w.tooltipInfos = append(w.tooltipInfos, info)
+		tooltip.SendMessage(tooltipAddToolMessage, 0, win.LPARAM(uintptr(unsafe.Pointer(info))))
+	}
+}
+
+func (w *appWindow) generateCredentials() {
+	credentials, err := generateCredentialPair(rand.Reader)
+	if err != nil {
+		w.showError("Не удалось сгенерировать данные авторизации")
+		return
+	}
+	w.login.SetText(credentials.Username)
+	w.password.SetText(credentials.Password)
+	w.setPasswordVisible(false)
+	w.updateFormEnabled()
+}
+
+func (w *appWindow) setPasswordVisible(visible bool) {
+	if visible == w.passwordVisible {
+		return
+	}
+	mask := w.passwordMask
+	text := "Показать пароль"
+	if visible {
+		mask = 0
+		text = "Скрыть пароль"
+	}
+	w.password.Hwnd().SendMessage(co.EM_SETPASSWORDCHAR, mask, 0)
+	w.passwordVisible = visible
+	w.revealPassword.SetText(text)
+	_ = w.password.Hwnd().InvalidateRect(nil, true)
+	_ = w.revealPassword.Hwnd().InvalidateRect(nil, true)
+}
+
+func (w *appWindow) copyText(text, errorMessage string) {
+	if text == "" || text == "—" {
+		return
+	}
+	if err := setClipboardText(w.wnd.Hwnd(), text); err != nil {
+		w.showError(errorMessage)
+	}
+}
+
+func boolWParam(value bool) win.WPARAM {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func setClipboardText(owner win.HWND, text string) (resultErr error) {
@@ -756,6 +980,58 @@ func drawActionButton(item *win.DRAWITEMSTRUCT, model viewModel, resources *wind
 	}
 }
 
+func drawIconButton(item *win.DRAWITEMSTRUCT, kind iconKind, resources *windowResources) {
+	if item == nil {
+		return
+	}
+	disabled := item.ItemState&co.ODS_DISABLED != 0
+	pressed := item.ItemState&co.ODS_SELECTED != 0
+	_ = item.Hdc.FillRect(&item.RcItem, resources.faceBrush)
+	_ = item.Hdc.FrameRect(&item.RcItem, resources.shadowBrush)
+	pen := resources.iconPen
+	if disabled {
+		pen = resources.disabledIconPen
+	}
+	oldPen, penErr := item.Hdc.SelectObjectPen(pen)
+	if penErr == nil {
+		defer item.Hdc.SelectObjectPen(oldPen)
+	}
+	stockBrush, brushErr := win.GetStockObject(co.STOCK_NULL_BRUSH)
+	if brushErr == nil {
+		oldBrush, selectErr := item.Hdc.SelectObjectBrush(win.HBRUSH(stockBrush))
+		if selectErr == nil {
+			defer item.Hdc.SelectObjectBrush(oldBrush)
+		}
+	}
+	x := int(item.RcItem.Left + (item.RcItem.Right-item.RcItem.Left)/2)
+	y := int(item.RcItem.Top + (item.RcItem.Bottom-item.RcItem.Top)/2)
+	if pressed && !disabled {
+		x++
+		y++
+	}
+	switch kind {
+	case iconCopy:
+		_ = item.Hdc.Rectangle(win.RECT{Left: int32(x - 7), Top: int32(y - 7), Right: int32(x + 4), Bottom: int32(y + 4)})
+		_ = item.Hdc.Rectangle(win.RECT{Left: int32(x - 3), Top: int32(y - 3), Right: int32(x + 8), Bottom: int32(y + 8)})
+	case iconEye, iconEyeOff:
+		_ = item.Hdc.Ellipse(win.RECT{Left: int32(x - 8), Top: int32(y - 5), Right: int32(x + 9), Bottom: int32(y + 6)})
+		_ = item.Hdc.Ellipse(win.RECT{Left: int32(x - 2), Top: int32(y - 2), Right: int32(x + 3), Bottom: int32(y + 3)})
+		if kind == iconEyeOff {
+			_, _ = item.Hdc.MoveToEx(x-8, y-8)
+			_ = item.Hdc.LineTo(x+8, y+8)
+		}
+	}
+	if !disabled && item.ItemState&co.ODS_FOCUS != 0 {
+		focus := win.RECT{
+			Left:   item.RcItem.Left + int32(ui.DpiX(3)),
+			Top:    item.RcItem.Top + int32(ui.DpiY(3)),
+			Right:  item.RcItem.Right - int32(ui.DpiX(3)),
+			Bottom: item.RcItem.Bottom - int32(ui.DpiY(3)),
+		}
+		_ = item.Hdc.FrameRect(&focus, resources.windowBrush)
+	}
+}
+
 func minimumWindowSize() (int, int) {
 	width, height := ui.Dpi(windowWidth, windowHeight)
 	rect := win.RECT{Right: int32(width), Bottom: int32(height)}
@@ -815,6 +1091,22 @@ func newWindowResources() (*windowResources, error) {
 		*item.field = font
 		resources.ownedFonts = append(resources.ownedFonts, font)
 	}
+	pens := []struct {
+		field *win.HPEN
+		color win.COLORREF
+	}{
+		{&resources.iconPen, win.GetSysColor(co.COLOR_BTNTEXT)},
+		{&resources.disabledIconPen, win.GetSysColor(co.COLOR_GRAYTEXT)},
+	}
+	for _, item := range pens {
+		pen, err := win.CreatePen(co.PS_SOLID, ui.DpiX(1), item.color)
+		if err != nil {
+			resources.close()
+			return nil, err
+		}
+		*item.field = pen
+		resources.ownedPens = append(resources.ownedPens, pen)
+	}
 	return resources, nil
 }
 
@@ -830,12 +1122,16 @@ func newFont(height int, weight co.FW) (win.HFONT, error) {
 }
 
 func (r *windowResources) close() {
+	for i := len(r.ownedPens) - 1; i >= 0; i-- {
+		_ = r.ownedPens[i].DeleteObject()
+	}
 	for i := len(r.ownedFonts) - 1; i >= 0; i-- {
 		_ = r.ownedFonts[i].DeleteObject()
 	}
 	for i := len(r.ownedBrushes) - 1; i >= 0; i-- {
 		_ = r.ownedBrushes[i].DeleteObject()
 	}
+	r.ownedPens = nil
 	r.ownedFonts = nil
 	r.ownedBrushes = nil
 }
