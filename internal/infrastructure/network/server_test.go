@@ -414,9 +414,10 @@ func TestServerConnectAuthenticationAuthorityAndPortPolicy(t *testing.T) {
 		authorization string
 		wantStatus    int
 		wantChallenge bool
+		wantClose     bool
 	}{
-		{name: "missing authentication", authority: "target.test:443", wantStatus: http.StatusProxyAuthRequired, wantChallenge: true},
-		{name: "invalid authentication", authority: "target.test:443", authorization: serverTestBasicAuthorization("user", "wrong"), wantStatus: http.StatusProxyAuthRequired, wantChallenge: true},
+		{name: "missing authentication", authority: "target.test:443", wantStatus: http.StatusProxyAuthRequired, wantChallenge: true, wantClose: true},
+		{name: "invalid authentication", authority: "target.test:443", authorization: serverTestBasicAuthorization("user", "wrong"), wantStatus: http.StatusProxyAuthRequired, wantChallenge: true, wantClose: true},
 		{name: "missing explicit port", authority: "target.test", authorization: serverTestBasicAuthorization("user", "password"), wantStatus: http.StatusBadRequest},
 		{name: "disallowed port", authority: "target.test:80", authorization: serverTestBasicAuthorization("user", "password"), wantStatus: http.StatusForbidden},
 	}
@@ -429,6 +430,9 @@ func TestServerConnectAuthenticationAuthorityAndPortPolicy(t *testing.T) {
 			}
 			if got := response.Header.Get("Proxy-Authenticate"); (got != "") != test.wantChallenge {
 				t.Fatalf("Proxy-Authenticate = %q", got)
+			}
+			if response.Close != test.wantClose {
+				t.Fatalf("Close = %t, want %t", response.Close, test.wantClose)
 			}
 			if strings.Contains(body, "target.test") || strings.Contains(body, "password") {
 				t.Fatalf("response exposes request details: %q", body)

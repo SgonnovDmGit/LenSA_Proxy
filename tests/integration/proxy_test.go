@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -185,6 +186,79 @@ func TestHTTPSConnectCarriesTargetTLS(t *testing.T) {
 	}
 	if !bytes.Equal(response.TLS.PeerCertificates[0].Raw, backend.Certificate().Raw) {
 		t.Fatal("proxy replaced the target TLS certificate")
+	}
+}
+
+func TestConnectAuthenticationChallengeCanRetryOnNewConnection(t *testing.T) {
+	networkInterface := integrationInterface(t)
+	echo := startEchoBackend(t, networkInterface.Address.Addr())
+	defer echo.Close(t)
+
+	server := startProxy(t, networkInterface, true, allowAddressPolicy{address: networkInterface.Address.Addr()}, echo.Port())
+	defer stopProxy(t, server)
+	authority := netip.AddrPortFrom(networkInterface.Address.Addr(), echo.Port()).String()
+
+	challengeConnection, err := net.DialTimeout("tcp4", server.Address(), 2*time.Second)
+	if err != nil {
+		t.Fatalf("dialing proxy for challenge: %v", err)
+	}
+	challengeReader := bufio.NewReader(challengeConnection)
+	if _, err := fmt.Fprintf(challengeConnection, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", authority, authority); err != nil {
+		challengeConnection.Close()
+		t.Fatalf("writing unauthenticated CONNECT: %v", err)
+	}
+	challengeResponse, err := http.ReadResponse(challengeReader, &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		challengeConnection.Close()
+		t.Fatalf("reading CONNECT challenge: %v", err)
+	}
+	_ = challengeResponse.Body.Close()
+	_ = challengeConnection.Close()
+	if challengeResponse.StatusCode != http.StatusProxyAuthRequired {
+		t.Fatalf("challenge status = %d, want %d", challengeResponse.StatusCode, http.StatusProxyAuthRequired)
+	}
+	if got := challengeResponse.Header.Get("Proxy-Authenticate"); got != `Basic realm="LenSA Proxy"` {
+		t.Fatalf("Proxy-Authenticate = %q", got)
+	}
+	if !challengeResponse.Close {
+		t.Fatal("CONNECT challenge did not tell the client to open a new connection")
+	}
+
+	authenticatedConnection, err := net.DialTimeout("tcp4", server.Address(), 2*time.Second)
+	if err != nil {
+		t.Fatalf("redialing proxy after challenge: %v", err)
+	}
+	defer authenticatedConnection.Close()
+	if err := authenticatedConnection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("setting authenticated CONNECT deadline: %v", err)
+	}
+	authenticatedReader := bufio.NewReader(authenticatedConnection)
+	authorization := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:password"))
+	if _, err := fmt.Fprintf(
+		authenticatedConnection,
+		"CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Authorization: %s\r\n\r\n",
+		authority,
+		authority,
+		authorization,
+	); err != nil {
+		t.Fatalf("writing authenticated CONNECT: %v", err)
+	}
+	authenticatedResponse, err := http.ReadResponse(authenticatedReader, &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		t.Fatalf("reading authenticated CONNECT: %v", err)
+	}
+	if authenticatedResponse.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated CONNECT status = %d, want %d", authenticatedResponse.StatusCode, http.StatusOK)
+	}
+	if _, err := authenticatedConnection.Write([]byte("ping")); err != nil {
+		t.Fatalf("writing authenticated tunnel payload: %v", err)
+	}
+	buffer := make([]byte, 4)
+	if _, err := io.ReadFull(authenticatedReader, buffer); err != nil {
+		t.Fatalf("reading authenticated tunnel payload: %v", err)
+	}
+	if string(buffer) != "ping" {
+		t.Fatalf("authenticated tunnel payload = %q", buffer)
 	}
 }
 

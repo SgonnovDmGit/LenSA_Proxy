@@ -398,6 +398,7 @@ func newForwardProxy(config proxy.Config, safeDialer *SafeDialer, connectPorts m
 		}
 		if !authenticated {
 			ctx.Resp = NewProxyAuthenticationRequiredResponse(request)
+			ctx.Resp.Close = true
 			return goproxy.RejectConnect, authority
 		}
 

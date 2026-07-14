@@ -22,7 +22,7 @@ import (
 
 const (
 	windowWidth       = 560
-	windowHeight      = 600
+	windowHeight      = 567
 	snapshotTimerID   = 1
 	snapshotInterval  = 200
 	iconResourceID    = 2
@@ -116,6 +116,7 @@ type appWindow struct {
 	iface           *ui.ComboBox
 	portLabel       *ui.Static
 	port            *ui.Edit
+	copyPort        *ui.Button
 	auth            *ui.CheckBox
 	generate        *ui.Button
 	loginLabel      *ui.Static
@@ -131,9 +132,6 @@ type appWindow struct {
 	hostLabel       *ui.Static
 	host            *ui.Edit
 	copyHost        *ui.Button
-	outputPortLabel *ui.Static
-	outputPort      *ui.Edit
-	copyPort        *ui.Button
 	clientsName     *ui.Static
 	clients         *ui.Static
 	networkName     *ui.Static
@@ -257,10 +255,17 @@ func (w *appWindow) createControls() {
 	w.port = ui.NewEdit(w.wnd, ui.OptsEdit().
 		Text(strconv.Itoa(int(proxy.DefaultPort))).
 		Position(ui.Dpi(37, 175)).
-		Width(ui.DpiX(486)).
+		Width(ui.DpiX(444)).
 		Height(ui.DpiY(27)).
 		CtrlStyle(co.ES_AUTOHSCROLL|co.ES_NOHIDESEL|co.ES_NUMBER).
 		Layout(resize))
+	w.copyPort = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Копировать порт").
+		Position(ui.Dpi(489, 175)).
+		Width(ui.DpiX(34)).
+		Height(ui.DpiY(27)).
+		CtrlStyle(co.BS_OWNERDRAW).
+		Layout(ui.LAY_MOVE_HOLD))
 	w.auth = ui.NewCheckBox(w.wnd, ui.OptsCheckBox().
 		Text("Требовать авторизацию").
 		Position(ui.Dpi(37, 212)).
@@ -320,12 +325,12 @@ func (w *appWindow) createControls() {
 
 	statusFill := ui.NewStatic(w.wnd, ui.OptsStatic().
 		Position(ui.Dpi(20, 375)).
-		Size(ui.Dpi(520, 205)).
+		Size(ui.Dpi(520, 172)).
 		CtrlStyle(co.SS_WHITERECT).
 		Layout(ui.LAY_RESIZE_RESIZE))
 	statusFrame := ui.NewStatic(w.wnd, ui.OptsStatic().
 		Position(ui.Dpi(20, 375)).
-		Size(ui.Dpi(520, 205)).
+		Size(ui.Dpi(520, 172)).
 		CtrlStyle(co.SS_ETCHEDFRAME).
 		Layout(ui.LAY_RESIZE_RESIZE))
 	w.statusDot = ui.NewStatic(w.wnd, ui.OptsStatic().
@@ -362,57 +367,38 @@ func (w *appWindow) createControls() {
 		Height(ui.DpiY(28)).
 		CtrlStyle(co.BS_OWNERDRAW).
 		Layout(ui.LAY_MOVE_HOLD))
-	w.outputPortLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
-		Text("Порт").
-		Position(ui.Dpi(38, 470)).
-		Size(ui.Dpi(50, 28)).
-		CtrlStyle(co.SS_LEFT|co.SS_CENTERIMAGE|co.SS_NOPREFIX))
-	w.outputPort = ui.NewEdit(w.wnd, ui.OptsEdit().
-		Position(ui.Dpi(88, 470)).
-		Width(ui.DpiX(393)).
-		Height(ui.DpiY(28)).
-		CtrlStyle(co.ES_AUTOHSCROLL|co.ES_READONLY).
-		WndStyle(co.WS_CHILD|co.WS_VISIBLE).
-		Layout(resize))
-	w.copyPort = ui.NewButton(w.wnd, ui.OptsButton().
-		Text("Копировать порт").
-		Position(ui.Dpi(489, 470)).
-		Width(ui.DpiX(34)).
-		Height(ui.DpiY(28)).
-		CtrlStyle(co.BS_OWNERDRAW).
-		Layout(ui.LAY_MOVE_HOLD))
 	w.clientsName = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Клиенты").
-		Position(ui.Dpi(38, 503)).
+		Position(ui.Dpi(38, 470)).
 		Size(ui.Dpi(200, 16)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.clients = ui.NewStatic(w.wnd, ui.OptsStatic().
-		Position(ui.Dpi(38, 519)).
+		Position(ui.Dpi(38, 486)).
 		Size(ui.Dpi(200, 17)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.networkName = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Сеть").
-		Position(ui.Dpi(280, 503)).
+		Position(ui.Dpi(280, 470)).
 		Size(ui.Dpi(242, 16)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.network = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("LAN only").
-		Position(ui.Dpi(280, 519)).
+		Position(ui.Dpi(280, 486)).
 		Size(ui.Dpi(242, 17)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.action = ui.NewButton(w.wnd, ui.OptsButton().
-		Position(ui.Dpi(38, 540)).
+		Position(ui.Dpi(38, 507)).
 		Width(ui.DpiX(484)).
 		Height(ui.DpiY(34)).
 		CtrlStyle(co.BS_OWNERDRAW).
 		Layout(resize))
 	w.statusBox = []*ui.Static{
 		statusFill, statusFrame, w.statusDot, w.statusText, w.description,
-		w.hostLabel, w.outputPortLabel, w.clientsName, w.clients, w.networkName, w.network,
+		w.hostLabel, w.clientsName, w.clients, w.networkName, w.network,
 	}
 	w.muted = []*ui.Static{
 		w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel, w.description,
-		w.hostLabel, w.outputPortLabel, w.clientsName, w.networkName,
+		w.hostLabel, w.clientsName, w.networkName,
 	}
 }
 
@@ -436,7 +422,7 @@ func (w *appWindow) bindEvents() {
 	w.revealPassword.On().BnClicked(func() { w.setPasswordVisible(!w.passwordVisible) })
 	w.copyPassword.On().BnClicked(func() { w.copyText(w.password.Text(), "Не удалось скопировать пароль") })
 	w.copyHost.On().BnClicked(func() { w.copyText(w.host.Text(), "Не удалось скопировать хост") })
-	w.copyPort.On().BnClicked(func() { w.copyText(w.outputPort.Text(), "Не удалось скопировать порт") })
+	w.copyPort.On().BnClicked(func() { w.copyText(w.port.Text(), "Не удалось скопировать порт") })
 	w.action.On().BnClicked(w.onAction)
 	w.wnd.On().WmCreate(func(ui.WmCreate) int {
 		w.applyFonts()
@@ -644,14 +630,12 @@ func (w *appWindow) applyView(model viewModel) {
 	w.current = model
 	w.statusText.Hwnd().SetWindowText(model.status)
 	w.description.Hwnd().SetWindowText(model.description)
-	host, port := connectionParts(model.address)
+	host := connectionHost(model.address)
 	w.host.SetText(host)
-	w.outputPort.SetText(port)
 	w.clients.Hwnd().SetWindowText(model.clients)
 	w.action.SetText(model.actionText)
 	w.action.Hwnd().EnableWindow(model.actionEnabled && !w.closing)
 	w.copyHost.Hwnd().EnableWindow(host != "—" && !w.closing)
-	w.copyPort.Hwnd().EnableWindow(port != "—" && !w.closing)
 	w.updateFormEnabled()
 	_ = w.statusDot.Hwnd().InvalidateRect(nil, true)
 	_ = w.statusText.Hwnd().InvalidateRect(nil, true)
@@ -663,6 +647,8 @@ func (w *appWindow) updateFormEnabled() {
 	formEnabled := w.current.formEnabled && !w.closing
 	w.iface.Hwnd().EnableWindow(formEnabled)
 	w.port.Hwnd().EnableWindow(formEnabled)
+	_, portErr := parsePort(w.port.Text())
+	w.copyPort.Hwnd().EnableWindow(portErr == nil && !w.closing)
 	w.auth.Hwnd().EnableWindow(formEnabled)
 	state := mapAuthControlState(formEnabled, w.auth.IsChecked(), w.closing, w.login.Text(), w.password.Text())
 	w.login.Hwnd().EnableWindow(state.credentialsEnabled)
