@@ -733,3 +733,137 @@ func assertBlocked(t *testing.T, result <-chan error) {
 	case <-time.After(50 * time.Millisecond):
 	}
 }
+
+func testInterfaces() []proxy.NetworkInterface {
+	return []proxy.NetworkInterface{
+		{Index: 1, Name: "Ethernet", Address: netip.MustParsePrefix("192.168.1.20/24")},
+		{Index: 2, Name: "Wi-Fi", Address: netip.MustParsePrefix("10.0.0.20/8")},
+	}
+}
+
+func TestServiceWithSettingsAppliesValidSettings(t *testing.T) {
+	source := InterfaceSource(func() ([]proxy.NetworkInterface, error) {
+		return testInterfaces(), nil
+	})
+	factory := ServerFactory(func(proxy.Config) (Server, error) { return &fakeServer{}, nil })
+	loader := SettingsLoader(func() (proxy.PersistedSettings, error) {
+		return proxy.PersistedSettings{
+			InterfaceName: "Wi-Fi",
+			Port:          9090,
+			AuthEnabled:   true,
+		}, nil
+	})
+
+	service, err := NewService(source, factory, WithSettings(loader, nil))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	snapshot := service.Snapshot()
+	if snapshot.State != proxy.StateStopped {
+		t.Fatalf("State = %v, want %v", snapshot.State, proxy.StateStopped)
+	}
+	if snapshot.Config.Interface.Name != "Wi-Fi" {
+		t.Fatalf("Interface.Name = %q, want %q", snapshot.Config.Interface.Name, "Wi-Fi")
+	}
+	if snapshot.Config.Port != 9090 {
+		t.Fatalf("Port = %d, want 9090", snapshot.Config.Port)
+	}
+	if !snapshot.Config.AuthEnabled {
+		t.Fatalf("AuthEnabled = false, want true")
+	}
+}
+
+func TestServiceWithSettingsEmptyReturnsDefaults(t *testing.T) {
+	source := InterfaceSource(func() ([]proxy.NetworkInterface, error) {
+		return testInterfaces(), nil
+	})
+	factory := ServerFactory(func(proxy.Config) (Server, error) { return &fakeServer{}, nil })
+	loader := SettingsLoader(func() (proxy.PersistedSettings, error) {
+		return proxy.PersistedSettings{}, nil
+	})
+
+	service, err := NewService(source, factory, WithSettings(loader, nil))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	snapshot := service.Snapshot()
+	if snapshot.Config.Interface.Name != "Ethernet" {
+		t.Fatalf("Interface.Name = %q, want first interface %q", snapshot.Config.Interface.Name, "Ethernet")
+	}
+	if snapshot.Config.Port != proxy.DefaultPort {
+		t.Fatalf("Port = %d, want default %d", snapshot.Config.Port, proxy.DefaultPort)
+	}
+	if snapshot.Config.AuthEnabled {
+		t.Fatalf("AuthEnabled = true, want false")
+	}
+}
+
+func TestServiceWithSettingsInterfaceNotFoundFallsBackToFirst(t *testing.T) {
+	source := InterfaceSource(func() ([]proxy.NetworkInterface, error) {
+		return testInterfaces(), nil
+	})
+	factory := ServerFactory(func(proxy.Config) (Server, error) { return &fakeServer{}, nil })
+	loader := SettingsLoader(func() (proxy.PersistedSettings, error) {
+		return proxy.PersistedSettings{
+			InterfaceName: "NonExistent",
+			Port:          8080,
+			AuthEnabled:   false,
+		}, nil
+	})
+
+	service, err := NewService(source, factory, WithSettings(loader, nil))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	snapshot := service.Snapshot()
+	if snapshot.Config.Interface.Name != "Ethernet" {
+		t.Fatalf("Interface.Name = %q, want first available %q", snapshot.Config.Interface.Name, "Ethernet")
+	}
+	if snapshot.Config.Port != 8080 {
+		t.Fatalf("Port = %d, want 8080", snapshot.Config.Port)
+	}
+}
+
+func TestServiceSaveSettings(t *testing.T) {
+	source := InterfaceSource(func() ([]proxy.NetworkInterface, error) { return nil, nil })
+	factory := ServerFactory(func(proxy.Config) (Server, error) { return &fakeServer{}, nil })
+
+	t.Run("no saver returns nil", func(t *testing.T) {
+		service := newTestService(t, source, factory)
+		if err := service.SaveSettings(proxy.PersistedSettings{}); err != nil {
+			t.Fatalf("SaveSettings() without saver error = %v, want nil", err)
+		}
+	})
+
+	t.Run("delegates to saver", func(t *testing.T) {
+		var saved proxy.PersistedSettings
+		var saveCalls int
+		saver := SettingsSaver(func(settings proxy.PersistedSettings) error {
+			saved = settings
+			saveCalls++
+			return nil
+		})
+		service, err := NewService(source, factory, WithSettings(nil, saver))
+		if err != nil {
+			t.Fatalf("NewService() error = %v", err)
+		}
+
+		settings := proxy.PersistedSettings{
+			InterfaceName: "Ethernet",
+			Port:          8080,
+			AuthEnabled:   true,
+		}
+		if err := service.SaveSettings(settings); err != nil {
+			t.Fatalf("SaveSettings() error = %v", err)
+		}
+		if saveCalls != 1 {
+			t.Fatalf("saver calls = %d, want 1", saveCalls)
+		}
+		if saved != settings {
+			t.Fatalf("saved = %+v, want %+v", saved, settings)
+		}
+	})
+}

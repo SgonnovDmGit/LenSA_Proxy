@@ -59,6 +59,8 @@ type Service interface {
 	Start(proxy.Config) error
 	Stop(context.Context) error
 	Snapshot() proxy.Snapshot
+	SaveSettings(proxy.PersistedSettings) error
+	LoadedSettings() proxy.PersistedSettings
 }
 
 type operation uint8
@@ -83,6 +85,7 @@ type operationResult struct {
 }
 
 type windowResources struct {
+	palette          themePalette
 	cardBrush        win.HBRUSH
 	blueBrush        win.HBRUSH
 	bluePressedBrush win.HBRUSH
@@ -91,10 +94,12 @@ type windowResources struct {
 	faceBrush        win.HBRUSH
 	windowBrush      win.HBRUSH
 	shadowBrush      win.HBRUSH
+	borderBrush      win.HBRUSH
 	titleFont        win.HFONT
 	sectionFont      win.HFONT
 	statusFont       win.HFONT
 	buttonFont       win.HFONT
+	toggleFont       win.HFONT
 	iconPen          win.HPEN
 	disabledIconPen  win.HPEN
 	ownedBrushes     []win.HBRUSH
@@ -109,6 +114,9 @@ type appWindow struct {
 	wnd             *ui.Main
 	title           *ui.Static
 	section         *ui.Static
+	themeLight      *ui.Button
+	themeDark       *ui.Button
+	themeSystem     *ui.Button
 	settingsBox     []*ui.Static
 	statusBox       []*ui.Static
 	muted           []*ui.Static
@@ -141,7 +149,10 @@ type appWindow struct {
 	closeResult     chan bool
 	inFlight        operation
 	pending         proxy.Config
+	pendingSettings proxy.PersistedSettings
 	current         viewModel
+	currentTheme    proxy.Theme
+	highContrast    bool
 	ready           bool
 	closing         bool
 	timer           bool
@@ -168,17 +179,20 @@ func run(service Service, iconID uint16) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	resources, err := newWindowResources()
+	highContrast := isHighContrast()
+	theme := service.LoadedSettings().Theme
+	palette := resolvePalette(theme, highContrast)
+	resources, err := newWindowResources(palette)
 	if err != nil {
 		return 1, err
 	}
 	defer resources.close()
-	window := newAppWindow(service, interfaces, resources, iconID)
+	window := newAppWindow(service, interfaces, resources, iconID, theme, highContrast)
 	window.bindEvents()
 	return window.wnd.RunAsMain(), nil
 }
 
-func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resources *windowResources, iconID uint16) *appWindow {
+func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resources *windowResources, iconID uint16, theme proxy.Theme, highContrast bool) *appWindow {
 	clientWidth, clientHeight := ui.Dpi(windowWidth, windowHeight)
 	options := ui.OptsMain().
 		Title("LenSA Proxy").
@@ -190,12 +204,14 @@ func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resource
 	}
 	wnd := ui.NewMain(options)
 	window := &appWindow{
-		service:     service,
-		interfaces:  append([]proxy.NetworkInterface(nil), interfaces...),
-		resources:   resources,
-		wnd:         wnd,
-		results:     make(chan operationResult, 4),
-		closeResult: make(chan bool, 1),
+		service:      service,
+		interfaces:   append([]proxy.NetworkInterface(nil), interfaces...),
+		resources:    resources,
+		wnd:          wnd,
+		currentTheme: theme,
+		highContrast: highContrast,
+		results:      make(chan operationResult, 4),
+		closeResult:  make(chan bool, 1),
 	}
 	window.createControls()
 	return window
@@ -206,9 +222,30 @@ func (w *appWindow) createControls() {
 	w.title = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("LenSA Proxy").
 		Position(ui.Dpi(20, 17)).
-		Size(ui.Dpi(520, 30)).
+		Size(ui.Dpi(310, 30)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
 		Layout(resize))
+	w.themeLight = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Светлая").
+		Position(ui.Dpi(340, 20)).
+		Width(ui.DpiX(60)).
+		Height(ui.DpiY(24)).
+		CtrlStyle(co.BS_OWNERDRAW).
+		Layout(ui.LAY_MOVE_HOLD))
+	w.themeDark = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Тёмная").
+		Position(ui.Dpi(402, 20)).
+		Width(ui.DpiX(60)).
+		Height(ui.DpiY(24)).
+		CtrlStyle(co.BS_OWNERDRAW).
+		Layout(ui.LAY_MOVE_HOLD))
+	w.themeSystem = ui.NewButton(w.wnd, ui.OptsButton().
+		Text("Системная").
+		Position(ui.Dpi(464, 20)).
+		Width(ui.DpiX(76)).
+		Height(ui.DpiY(24)).
+		CtrlStyle(co.BS_OWNERDRAW).
+		Layout(ui.LAY_MOVE_HOLD))
 	w.section = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Подключение").
 		Position(ui.Dpi(27, 57)).
@@ -219,12 +256,7 @@ func (w *appWindow) createControls() {
 	settingsFill := ui.NewStatic(w.wnd, ui.OptsStatic().
 		Position(ui.Dpi(20, 84)).
 		Size(ui.Dpi(520, 282)).
-		CtrlStyle(co.SS_WHITERECT).
-		Layout(resize))
-	settingsFrame := ui.NewStatic(w.wnd, ui.OptsStatic().
-		Position(ui.Dpi(20, 84)).
-		Size(ui.Dpi(520, 282)).
-		CtrlStyle(co.SS_ETCHEDFRAME).
+		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
 		Layout(resize))
 	w.ifaceLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Сетевой интерфейс").
@@ -276,6 +308,7 @@ func (w *appWindow) createControls() {
 		Position(ui.Dpi(387, 212)).
 		Width(ui.DpiX(136)).
 		Height(ui.DpiY(28)).
+		CtrlStyle(co.BS_OWNERDRAW).
 		Layout(ui.LAY_MOVE_HOLD))
 	w.loginLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Логин").
@@ -321,17 +354,12 @@ func (w *appWindow) createControls() {
 		Height(ui.DpiY(27)).
 		CtrlStyle(co.BS_OWNERDRAW).
 		Layout(ui.LAY_MOVE_HOLD))
-	w.settingsBox = []*ui.Static{settingsFill, settingsFrame, w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel}
+	w.settingsBox = []*ui.Static{settingsFill, w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel}
 
 	statusFill := ui.NewStatic(w.wnd, ui.OptsStatic().
 		Position(ui.Dpi(20, 375)).
 		Size(ui.Dpi(520, 172)).
-		CtrlStyle(co.SS_WHITERECT).
-		Layout(ui.LAY_RESIZE_RESIZE))
-	statusFrame := ui.NewStatic(w.wnd, ui.OptsStatic().
-		Position(ui.Dpi(20, 375)).
-		Size(ui.Dpi(520, 172)).
-		CtrlStyle(co.SS_ETCHEDFRAME).
+		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
 		Layout(ui.LAY_RESIZE_RESIZE))
 	w.statusDot = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("●").
@@ -393,7 +421,7 @@ func (w *appWindow) createControls() {
 		CtrlStyle(co.BS_OWNERDRAW).
 		Layout(resize))
 	w.statusBox = []*ui.Static{
-		statusFill, statusFrame, w.statusDot, w.statusText, w.description,
+		statusFill, w.statusDot, w.statusText, w.description,
 		w.hostLabel, w.clientsName, w.clients, w.networkName, w.network,
 	}
 	w.muted = []*ui.Static{
@@ -424,8 +452,12 @@ func (w *appWindow) bindEvents() {
 	w.copyHost.On().BnClicked(func() { w.copyText(w.host.Text(), "Не удалось скопировать хост") })
 	w.copyPort.On().BnClicked(func() { w.copyText(w.port.Text(), "Не удалось скопировать порт") })
 	w.action.On().BnClicked(w.onAction)
+	w.themeLight.On().BnClicked(func() { w.changeTheme(proxy.ThemeLight) })
+	w.themeDark.On().BnClicked(func() { w.changeTheme(proxy.ThemeDark) })
+	w.themeSystem.On().BnClicked(func() { w.changeTheme(proxy.ThemeSystem) })
 	w.wnd.On().WmCreate(func(ui.WmCreate) int {
 		w.applyFonts()
+		w.applyToggleFont()
 		w.port.LimitText(5)
 		w.login.LimitText(128)
 		w.password.LimitText(128)
@@ -436,6 +468,14 @@ func (w *appWindow) bindEvents() {
 		}
 		w.installTooltips()
 		w.wnd.Hwnd().SendMessage(dialogSetDefaultID, win.WPARAM(w.action.CtrlId()), 0)
+		w.applyInitialSettings()
+		w.updateThemeToggle()
+		w.applyControlThemes()
+		if w.highContrast {
+			w.themeLight.Hwnd().EnableWindow(false)
+			w.themeDark.Hwnd().EnableWindow(false)
+			w.themeSystem.Hwnd().EnableWindow(false)
+		}
 		w.ready = true
 		if w.wnd.Hwnd().SetTimer(snapshotTimerID, snapshotInterval) == nil {
 			w.timer = true
@@ -450,6 +490,13 @@ func (w *appWindow) bindEvents() {
 	})
 	w.wnd.On().WmCtlColorStatic(w.colorStatic)
 	w.wnd.On().WmCtlColorBtn(w.colorButton)
+	w.wnd.On().WmCtlColorEdit(w.colorEdit)
+	w.wnd.On().WmCtlColorListBox(w.colorListBox)
+	w.wnd.On().WmEraseBkgnd(func(event ui.WmEraseBkgnd) int {
+		rect, _ := w.wnd.Hwnd().GetClientRect()
+		_ = event.Hdc().FillRect(&rect, w.resources.faceBrush)
+		return 1
+	})
 	w.wnd.On().WmDrawItem(func(event ui.WmDrawItem) {
 		controlID := event.ControlId()
 		switch controlID {
@@ -463,10 +510,19 @@ func (w *appWindow) bindEvents() {
 				kind = iconEyeOff
 			}
 			drawIconButton(event.DrawItemStruct(), kind, w.resources)
+		case int(w.themeLight.CtrlId()):
+			drawThemeToggle(event.DrawItemStruct(), w.currentTheme == proxy.ThemeLight, "Светлая", w.resources)
+		case int(w.themeDark.CtrlId()):
+			drawThemeToggle(event.DrawItemStruct(), w.currentTheme == proxy.ThemeDark, "Тёмная", w.resources)
+		case int(w.themeSystem.CtrlId()):
+			drawThemeToggle(event.DrawItemStruct(), w.currentTheme == proxy.ThemeSystem, "Системная", w.resources)
+		case int(w.generate.CtrlId()):
+			drawGenerateButton(event.DrawItemStruct(), "Сгенерировать", w.resources)
 		}
 	})
 	w.wnd.On().WmClose(w.close)
 	w.wnd.On().WmDestroy(func() {
+		w.saveSettingsBestEffort()
 		if w.timer {
 			_ = w.wnd.Hwnd().KillTimer(snapshotTimerID)
 		}
@@ -487,6 +543,13 @@ func (w *appWindow) applyFonts() {
 	setControlFont(w.action.Hwnd(), w.resources.buttonFont)
 }
 
+// applyToggleFont устанавливает шрифт для кнопок переключения темы.
+func (w *appWindow) applyToggleFont() {
+	setControlFont(w.themeLight.Hwnd(), w.resources.toggleFont)
+	setControlFont(w.themeDark.Hwnd(), w.resources.toggleFont)
+	setControlFont(w.themeSystem.Hwnd(), w.resources.toggleFont)
+}
+
 func setControlFont(hwnd win.HWND, font win.HFONT) {
 	hwnd.SendMessage(co.WM_SETFONT, win.WPARAM(font), 1)
 }
@@ -504,6 +567,102 @@ func (w *appWindow) readForm() formValues {
 		authEnabled:    w.auth.IsChecked(),
 		username:       w.login.Text(),
 		password:       w.password.Text(),
+	}
+}
+
+// readPersistedSettings маппит текущие form values в PersistedSettings,
+// явно отбрасывая credentials. Порт при невалидном значении — DefaultPort.
+// Theme берётся из currentTheme — значение выбранной кнопки переключения.
+func (w *appWindow) readPersistedSettings() proxy.PersistedSettings {
+	values := w.readForm()
+	settings := proxy.PersistedSettings{
+		AuthEnabled: values.authEnabled,
+		Theme:       w.currentTheme,
+	}
+	if values.interfaceIndex >= 0 && values.interfaceIndex < len(w.interfaces) {
+		settings.InterfaceName = w.interfaces[values.interfaceIndex].Name
+	}
+	port, err := parsePort(values.port)
+	if err != nil {
+		port = proxy.DefaultPort
+	}
+	settings.Port = port
+	return settings
+}
+
+// saveSettingsBestEffort сохраняет захваченные при закрытии настройки.
+// Ошибка записи игнорируется — persistence best-effort, не critical path.
+func (w *appWindow) saveSettingsBestEffort() {
+	_ = w.service.SaveSettings(w.pendingSettings)
+}
+
+// applyInitialSettings применяет загруженные из snapshot настройки к форме:
+// выбирает интерфейс по имени, устанавливает порт и auth checkbox.
+// Theme восстанавливается из LoadedSettings — значение, загруженное из .ini.
+func (w *appWindow) applyInitialSettings() {
+	config := w.service.Snapshot().Config
+	for i, iface := range w.interfaces {
+		if iface.Name == config.Interface.Name {
+			w.iface.SelectIndex(i)
+			break
+		}
+	}
+	if config.Port >= proxy.MinPort {
+		w.port.SetText(strconv.Itoa(int(config.Port)))
+	}
+	w.auth.SetCheck(config.AuthEnabled)
+	w.currentTheme = w.service.LoadedSettings().Theme
+}
+
+// changeTheme переключает тему: обновляет currentTheme, пересоздаёт ресурсы
+// с новой palette и перерисовывает все контролы. При highContrast — no-op.
+func (w *appWindow) changeTheme(theme proxy.Theme) {
+	if !w.ready || w.highContrast || w.currentTheme == theme {
+		return
+	}
+	w.currentTheme = theme
+	palette := resolvePalette(theme, w.highContrast)
+	resources, err := newWindowResources(palette)
+	if err != nil {
+		return
+	}
+	w.resources.close()
+	w.resources = resources
+	w.applyFonts()
+	w.applyToggleFont()
+	w.updateThemeToggle()
+	w.applyControlThemes()
+	w.refresh()
+	_ = w.wnd.Hwnd().RedrawWindow(nil, 0,
+		co.RDW_INVALIDATE|co.RDW_ERASE|co.RDW_FRAME|co.RDW_ALLCHILDREN|co.RDW_UPDATENOW)
+}
+
+// updateThemeToggle перерисовывает кнопки переключения темы.
+func (w *appWindow) updateThemeToggle() {
+	_ = w.themeLight.Hwnd().InvalidateRect(nil, true)
+	_ = w.themeDark.Hwnd().InvalidateRect(nil, true)
+	_ = w.themeSystem.Hwnd().InvalidateRect(nil, true)
+}
+
+// applyControlThemes снимает visual styles со стандартных контролов,
+// чтобы WM_CTLCOLOR* полностью управляла их цветами. Для High Contrast
+// visual styles оставляем системными.
+func (w *appWindow) applyControlThemes() {
+	if w.highContrast {
+		return
+	}
+	controls := []win.HWND{
+		w.iface.Hwnd(),
+		w.port.Hwnd(),
+		w.login.Hwnd(),
+		w.password.Hwnd(),
+		w.host.Hwnd(),
+		w.auth.Hwnd(),
+	}
+	redraw := co.RDW_INVALIDATE | co.RDW_ERASE | co.RDW_FRAME | co.RDW_ALLCHILDREN
+	for _, hwnd := range controls {
+		disableVisualStyles(hwnd)
+		_ = hwnd.RedrawWindow(nil, 0, redraw)
 	}
 }
 
@@ -665,6 +824,7 @@ func (w *appWindow) close() {
 	if w.closing {
 		return
 	}
+	w.pendingSettings = w.readPersistedSettings()
 	snapshot := w.service.Snapshot()
 	active := w.inFlight != operationNone || snapshot.State == proxy.StateStarting ||
 		snapshot.State == proxy.StateRunning || snapshot.State == proxy.StateStopping
@@ -717,6 +877,9 @@ func (w *appWindow) installTooltips() {
 		{w.copyPassword, "Копировать пароль"},
 		{w.copyHost, "Копировать хост"},
 		{w.copyPort, "Копировать порт"},
+		{w.themeLight, "Светлая тема"},
+		{w.themeDark, "Тёмная тема"},
+		{w.themeSystem, "Системная тема"},
 	}
 	for _, tool := range tools {
 		text, err := syscall.UTF16FromString(tool.text)
@@ -853,38 +1016,62 @@ func (w *appWindow) showError(message string) {
 func (w *appWindow) colorStatic(event ui.WmCtlColor) win.HBRUSH {
 	hwnd := event.HwndControl()
 	hdc := event.Hdc()
+	palette := w.resources.palette
 	if hwnd == w.statusDot.Hwnd() {
 		_, _ = hdc.SetBkMode(co.BKMODE_TRANSPARENT)
-		_, _ = hdc.SetTextColor(dotColor(w.current.dot))
+		_, _ = hdc.SetTextColor(dotColor(w.current.dot, palette))
 		return w.resources.cardBrush
 	}
 	if containsStatic(w.settingsBox, hwnd) || containsStatic(w.statusBox, hwnd) {
 		_, _ = hdc.SetBkMode(co.BKMODE_OPAQUE)
-		_, _ = hdc.SetBkColor(win.GetSysColor(co.COLOR_WINDOW))
-		color := win.GetSysColor(co.COLOR_WINDOWTEXT)
+		_, _ = hdc.SetBkColor(palette.windowColor)
+		color := palette.textColor
 		if containsStatic(w.muted, hwnd) {
-			color = win.GetSysColor(co.COLOR_GRAYTEXT)
+			color = palette.mutedColor
 		}
 		if hwnd == w.description.Hwnd() && w.current.dot == dotDanger {
-			color = dotColor(dotDanger)
+			color = palette.dotDangerColor
 		}
 		_, _ = hdc.SetTextColor(color)
 		return w.resources.cardBrush
 	}
+	if hwnd == w.host.Hwnd() {
+		_, _ = hdc.SetBkMode(co.BKMODE_OPAQUE)
+		_, _ = hdc.SetBkColor(palette.windowColor)
+		_, _ = hdc.SetTextColor(palette.textColor)
+		return w.resources.cardBrush
+	}
 	_, _ = hdc.SetBkMode(co.BKMODE_OPAQUE)
-	_, _ = hdc.SetBkColor(win.GetSysColor(co.COLOR_BTNFACE))
-	_, _ = hdc.SetTextColor(win.GetSysColor(co.COLOR_BTNTEXT))
+	_, _ = hdc.SetBkColor(palette.faceColor)
+	_, _ = hdc.SetTextColor(palette.textColor)
 	return w.resources.faceBrush
 }
 
 func (w *appWindow) colorButton(event ui.WmCtlColor) win.HBRUSH {
+	palette := w.resources.palette
 	if event.HwndControl() == w.auth.Hwnd() {
 		_, _ = event.Hdc().SetBkMode(co.BKMODE_OPAQUE)
-		_, _ = event.Hdc().SetBkColor(win.GetSysColor(co.COLOR_WINDOW))
-		_, _ = event.Hdc().SetTextColor(win.GetSysColor(co.COLOR_WINDOWTEXT))
+		_, _ = event.Hdc().SetBkColor(palette.windowColor)
+		_, _ = event.Hdc().SetTextColor(palette.textColor)
 		return w.resources.cardBrush
 	}
 	return w.resources.faceBrush
+}
+
+func (w *appWindow) colorEdit(event ui.WmCtlColor) win.HBRUSH {
+	palette := w.resources.palette
+	_, _ = event.Hdc().SetBkMode(co.BKMODE_OPAQUE)
+	_, _ = event.Hdc().SetBkColor(palette.windowColor)
+	_, _ = event.Hdc().SetTextColor(palette.textColor)
+	return w.resources.windowBrush
+}
+
+func (w *appWindow) colorListBox(event ui.WmCtlColor) win.HBRUSH {
+	palette := w.resources.palette
+	_, _ = event.Hdc().SetBkMode(co.BKMODE_OPAQUE)
+	_, _ = event.Hdc().SetBkColor(palette.windowColor)
+	_, _ = event.Hdc().SetTextColor(palette.textColor)
+	return w.resources.windowBrush
 }
 
 func containsStatic(statics []*ui.Static, hwnd win.HWND) bool {
@@ -896,16 +1083,16 @@ func containsStatic(statics []*ui.Static, hwnd win.HWND) bool {
 	return false
 }
 
-func dotColor(tone dotTone) win.COLORREF {
+func dotColor(tone dotTone, palette themePalette) win.COLORREF {
 	switch tone {
 	case dotWarning:
-		return win.RGB(180, 83, 9)
+		return palette.dotWarningColor
 	case dotSuccess:
-		return win.RGB(22, 163, 74)
+		return palette.dotSuccessColor
 	case dotDanger:
-		return win.RGB(220, 38, 38)
+		return palette.dotDangerColor
 	default:
-		return win.RGB(124, 135, 151)
+		return palette.dotMutedColor
 	}
 }
 
@@ -913,6 +1100,7 @@ func drawActionButton(item *win.DRAWITEMSTRUCT, model viewModel, resources *wind
 	if item == nil {
 		return
 	}
+	palette := resources.palette
 	disabled := item.ItemState&co.ODS_DISABLED != 0
 	pressed := item.ItemState&co.ODS_SELECTED != 0
 	background := resources.blueBrush
@@ -928,7 +1116,7 @@ func drawActionButton(item *win.DRAWITEMSTRUCT, model viewModel, resources *wind
 	if disabled {
 		background = resources.faceBrush
 		border = resources.shadowBrush
-		textColor = win.GetSysColor(co.COLOR_GRAYTEXT)
+		textColor = palette.mutedColor
 	}
 	_ = item.Hdc.FillRect(&item.RcItem, background)
 	_ = item.Hdc.FrameRect(&item.RcItem, border)
@@ -972,8 +1160,8 @@ func drawIconButton(item *win.DRAWITEMSTRUCT, kind iconKind, resources *windowRe
 	}
 	disabled := item.ItemState&co.ODS_DISABLED != 0
 	pressed := item.ItemState&co.ODS_SELECTED != 0
-	_ = item.Hdc.FillRect(&item.RcItem, resources.faceBrush)
-	_ = item.Hdc.FrameRect(&item.RcItem, resources.shadowBrush)
+	_ = item.Hdc.FillRect(&item.RcItem, resources.windowBrush)
+	_ = item.Hdc.FrameRect(&item.RcItem, resources.borderBrush)
 	pen := resources.iconPen
 	if disabled {
 		pen = resources.disabledIconPen
@@ -1018,6 +1206,100 @@ func drawIconButton(item *win.DRAWITEMSTRUCT, kind iconKind, resources *windowRe
 	}
 }
 
+// drawGenerateButton отрисовывает owner-draw кнопку "Сгенерировать".
+// Фон совпадает с цветом карточки (windowBrush), рамка — borderBrush.
+func drawGenerateButton(item *win.DRAWITEMSTRUCT, text string, resources *windowResources) {
+	if item == nil {
+		return
+	}
+	palette := resources.palette
+	disabled := item.ItemState&co.ODS_DISABLED != 0
+	pressed := item.ItemState&co.ODS_SELECTED != 0
+	background := resources.windowBrush
+	border := resources.borderBrush
+	textColor := palette.textColor
+	if pressed && !disabled {
+		background = border
+	}
+	if disabled {
+		textColor = palette.mutedColor
+	}
+	_ = item.Hdc.FillRect(&item.RcItem, background)
+	_ = item.Hdc.FrameRect(&item.RcItem, border)
+	oldFont, fontErr := item.Hdc.SelectObjectFont(resources.toggleFont)
+	if fontErr == nil {
+		defer item.Hdc.SelectObjectFont(oldFont)
+	}
+	oldMode, modeErr := item.Hdc.SetBkMode(co.BKMODE_TRANSPARENT)
+	if modeErr == nil {
+		defer item.Hdc.SetBkMode(oldMode)
+	}
+	oldColor, colorErr := item.Hdc.SetTextColor(textColor)
+	if colorErr == nil {
+		defer item.Hdc.SetTextColor(oldColor)
+	}
+	size, err := item.Hdc.GetTextExtentPoint32(text)
+	if err == nil {
+		x := item.RcItem.Left + (item.RcItem.Right-item.RcItem.Left-size.Cx)/2
+		y := item.RcItem.Top + (item.RcItem.Bottom-item.RcItem.Top-size.Cy)/2
+		if pressed && !disabled {
+			x++
+			y++
+		}
+		_ = item.Hdc.TextOut(int(x), int(y), text)
+	}
+}
+
+// drawThemeToggle отрисовывает owner-draw кнопку переключения темы.
+// Выбранная кнопка (selected=true) рисуется с синим фоном и белым текстом,
+// невыбранная — с фоном face и текстом textColor. Disabled — приглушённый.
+func drawThemeToggle(item *win.DRAWITEMSTRUCT, selected bool, text string, resources *windowResources) {
+	if item == nil {
+		return
+	}
+	palette := resources.palette
+	disabled := item.ItemState&co.ODS_DISABLED != 0
+	pressed := item.ItemState&co.ODS_SELECTED != 0
+	background := resources.faceBrush
+	border := resources.borderBrush
+	textColor := palette.textColor
+	if selected {
+		background = resources.blueBrush
+		border = resources.bluePressedBrush
+		textColor = win.RGB(255, 255, 255)
+	}
+	if pressed && !disabled {
+		background = border
+	}
+	if disabled {
+		textColor = palette.mutedColor
+	}
+	_ = item.Hdc.FillRect(&item.RcItem, background)
+	_ = item.Hdc.FrameRect(&item.RcItem, border)
+	oldFont, fontErr := item.Hdc.SelectObjectFont(resources.toggleFont)
+	if fontErr == nil {
+		defer item.Hdc.SelectObjectFont(oldFont)
+	}
+	oldMode, modeErr := item.Hdc.SetBkMode(co.BKMODE_TRANSPARENT)
+	if modeErr == nil {
+		defer item.Hdc.SetBkMode(oldMode)
+	}
+	oldColor, colorErr := item.Hdc.SetTextColor(textColor)
+	if colorErr == nil {
+		defer item.Hdc.SetTextColor(oldColor)
+	}
+	size, err := item.Hdc.GetTextExtentPoint32(text)
+	if err == nil {
+		x := item.RcItem.Left + (item.RcItem.Right-item.RcItem.Left-size.Cx)/2
+		y := item.RcItem.Top + (item.RcItem.Bottom-item.RcItem.Top-size.Cy)/2
+		if pressed && !disabled {
+			x++
+			y++
+		}
+		_ = item.Hdc.TextOut(int(x), int(y), text)
+	}
+}
+
 func minimumWindowSize() (int, int) {
 	width, height := ui.Dpi(windowWidth, windowHeight)
 	rect := win.RECT{Right: int32(width), Bottom: int32(height)}
@@ -1027,27 +1309,20 @@ func minimumWindowSize() (int, int) {
 	return int(rect.Right - rect.Left), int(rect.Bottom - rect.Top)
 }
 
-func newWindowResources() (*windowResources, error) {
-	resources := &windowResources{}
-	var err error
-	if resources.faceBrush, err = win.GetSysColorBrush(co.COLOR_BTNFACE); err != nil {
-		return nil, err
-	}
-	if resources.windowBrush, err = win.GetSysColorBrush(co.COLOR_WINDOW); err != nil {
-		return nil, err
-	}
-	resources.cardBrush = resources.windowBrush
-	if resources.shadowBrush, err = win.GetSysColorBrush(co.COLOR_BTNSHADOW); err != nil {
-		return nil, err
-	}
+func newWindowResources(palette themePalette) (*windowResources, error) {
+	resources := &windowResources{palette: palette}
 	brushes := []struct {
 		field *win.HBRUSH
 		color win.COLORREF
 	}{
-		{&resources.blueBrush, win.RGB(37, 99, 235)},
-		{&resources.bluePressedBrush, win.RGB(29, 78, 216)},
-		{&resources.redBrush, win.RGB(220, 38, 38)},
-		{&resources.redPressedBrush, win.RGB(185, 28, 28)},
+		{&resources.faceBrush, palette.faceColor},
+		{&resources.windowBrush, palette.windowColor},
+		{&resources.shadowBrush, palette.shadowColor},
+		{&resources.borderBrush, palette.borderColor},
+		{&resources.blueBrush, palette.blueColor},
+		{&resources.bluePressedBrush, palette.bluePressedColor},
+		{&resources.redBrush, palette.redColor},
+		{&resources.redPressedBrush, palette.redPressedColor},
 	}
 	for _, item := range brushes {
 		brush, err := win.CreateBrushIndirect(&win.LOGBRUSH{Style: co.BRS_SOLID, Color: item.color})
@@ -1058,6 +1333,7 @@ func newWindowResources() (*windowResources, error) {
 		*item.field = brush
 		resources.ownedBrushes = append(resources.ownedBrushes, brush)
 	}
+	resources.cardBrush = resources.windowBrush
 	fonts := []struct {
 		field  *win.HFONT
 		height int
@@ -1067,6 +1343,7 @@ func newWindowResources() (*windowResources, error) {
 		{&resources.sectionFont, 15, co.FW_BOLD},
 		{&resources.statusFont, 17, co.FW_BOLD},
 		{&resources.buttonFont, 14, co.FW_SEMIBOLD},
+		{&resources.toggleFont, 12, co.FW_NORMAL},
 	}
 	for _, item := range fonts {
 		font, err := newFont(item.height, item.weight)
@@ -1081,8 +1358,8 @@ func newWindowResources() (*windowResources, error) {
 		field *win.HPEN
 		color win.COLORREF
 	}{
-		{&resources.iconPen, win.GetSysColor(co.COLOR_BTNTEXT)},
-		{&resources.disabledIconPen, win.GetSysColor(co.COLOR_GRAYTEXT)},
+		{&resources.iconPen, palette.iconColor},
+		{&resources.disabledIconPen, palette.disabledIconColor},
 	}
 	for _, item := range pens {
 		pen, err := win.CreatePen(co.PS_SOLID, ui.DpiX(1), item.color)

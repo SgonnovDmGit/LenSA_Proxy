@@ -4,6 +4,22 @@
 
 Формат основан на Keep a Changelog, версионирование — SemVer.
 
+## [Unreleased]
+
+## [0.2.0] — 2026-07-25
+
+### Added
+
+- Portable persistence не-secret настроек: interface, port и auth toggle сохраняются в `LenSA_Proxy.ini` рядом с `.exe` при закрытии и восстанавливаются при старте.
+- Пароль не сохраняется и не читается.
+- Tolerant fallback на defaults при отсутствии, повреждении или неполном `.ini`, а также при ненайденном имени интерфейса.
+- Сохранение настроек — best-effort: ошибки записи игнорируются.
+- Light/dark/system темы: переключатель в header окна, выбор сохраняется в `.ini` (`theme = light|dark|system`).
+- Dark palette через hardcoded hex colors; light palette — системные цвета Windows.
+- Системная тема: запрос Windows 10+ dark preference через registry; Windows 7 — всегда light.
+- High Contrast detection: при активном HC theme toggle отключён, используются системные цвета.
+- Пересоздание brushes/pens и repaint при смене темы.
+
 ## [0.1.0] — 2026-07-14
 
 ### Added
