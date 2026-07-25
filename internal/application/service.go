@@ -40,23 +40,45 @@ type InterfaceSource func() ([]proxy.NetworkInterface, error)
 
 type ServerFactory func(proxy.Config) (Server, error)
 
+// SettingsLoader читает сохранённые не-secret настройки при старте.
+type SettingsLoader func() (proxy.PersistedSettings, error)
+
+// SettingsSaver записывает не-secret настройки (credentials отбрасываются вызывающей стороной).
+type SettingsSaver func(proxy.PersistedSettings) error
+
+// Option настраивает Service через функциональные опции.
+type Option func(*Service)
+
+// WithSettings подключает загрузку и сохранение не-secret настроек.
+// Loader применяется к initial snapshot: если InterfaceName найден среди
+// обнаруженных интерфейсов — используется он, иначе первый доступный.
+// Port валидируется (MinPort..65535), при невалидности — DefaultPort.
+func WithSettings(loader SettingsLoader, saver SettingsSaver) Option {
+	return func(s *Service) {
+		s.settingsLoader = loader
+		s.settingsSaver = saver
+	}
+}
+
 type Service struct {
 	operationMutex  sync.Mutex
 	snapshotMutex   sync.RWMutex
 	interfaceSource InterfaceSource
 	serverFactory   ServerFactory
+	settingsLoader  SettingsLoader
+	settingsSaver   SettingsSaver
 	snapshot        proxy.Snapshot
 	server          Server
 }
 
-func NewService(interfaceSource InterfaceSource, serverFactory ServerFactory) (*Service, error) {
+func NewService(interfaceSource InterfaceSource, serverFactory ServerFactory, opts ...Option) (*Service, error) {
 	if isNilValue(interfaceSource) {
 		return nil, ErrNilInterfaceSource
 	}
 	if isNilValue(serverFactory) {
 		return nil, ErrNilServerFactory
 	}
-	return &Service{
+	service := &Service{
 		interfaceSource: interfaceSource,
 		serverFactory:   serverFactory,
 		snapshot: proxy.Snapshot{
@@ -65,7 +87,57 @@ func NewService(interfaceSource InterfaceSource, serverFactory ServerFactory) (*
 				Port: proxy.DefaultPort,
 			},
 		},
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(service)
+	}
+	if service.settingsLoader != nil {
+		loaded, _ := service.settingsLoader()
+		service.applyPersistedSettings(loaded)
+	}
+	return service, nil
+}
+
+// applyPersistedSettings применяет загруженные настройки к initial snapshot.
+// InterfaceName ищется среди обнаруженных интерфейсов; если не найден или пуст —
+// fallback на первый доступный. Port валидируется, при невалидности — DefaultPort.
+func (s *Service) applyPersistedSettings(settings proxy.PersistedSettings) {
+	port := settings.Port
+	if port < proxy.MinPort {
+		port = proxy.DefaultPort
+	}
+	config := proxy.Config{
+		Port:        port,
+		AuthEnabled: settings.AuthEnabled,
+	}
+	if interfaces, err := s.interfaceSource(); err == nil && len(interfaces) > 0 {
+		found := false
+		for _, iface := range interfaces {
+			if iface.Name == settings.InterfaceName {
+				config.Interface = iface
+				found = true
+				break
+			}
+		}
+		if !found {
+			config.Interface = interfaces[0]
+		}
+	}
+	s.snapshotMutex.Lock()
+	s.snapshot = proxy.Snapshot{
+		State:  proxy.StateStopped,
+		Config: config,
+	}
+	s.snapshotMutex.Unlock()
+}
+
+// SaveSettings сохраняет текущие не-secret настройки через SettingsSaver.
+// Если saver не задан — no-op. Ошибка записи возвращается вызывающей стороне.
+func (s *Service) SaveSettings(settings proxy.PersistedSettings) error {
+	if s.settingsSaver == nil {
+		return nil
+	}
+	return s.settingsSaver(settings)
 }
 
 func (s *Service) Interfaces() ([]proxy.NetworkInterface, error) {

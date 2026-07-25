@@ -59,6 +59,7 @@ type Service interface {
 	Start(proxy.Config) error
 	Stop(context.Context) error
 	Snapshot() proxy.Snapshot
+	SaveSettings(proxy.PersistedSettings) error
 }
 
 type operation uint8
@@ -141,6 +142,7 @@ type appWindow struct {
 	closeResult     chan bool
 	inFlight        operation
 	pending         proxy.Config
+	pendingSettings proxy.PersistedSettings
 	current         viewModel
 	ready           bool
 	closing         bool
@@ -436,6 +438,7 @@ func (w *appWindow) bindEvents() {
 		}
 		w.installTooltips()
 		w.wnd.Hwnd().SendMessage(dialogSetDefaultID, win.WPARAM(w.action.CtrlId()), 0)
+		w.applyInitialSettings()
 		w.ready = true
 		if w.wnd.Hwnd().SetTimer(snapshotTimerID, snapshotInterval) == nil {
 			w.timer = true
@@ -467,6 +470,7 @@ func (w *appWindow) bindEvents() {
 	})
 	w.wnd.On().WmClose(w.close)
 	w.wnd.On().WmDestroy(func() {
+		w.saveSettingsBestEffort()
 		if w.timer {
 			_ = w.wnd.Hwnd().KillTimer(snapshotTimerID)
 		}
@@ -505,6 +509,46 @@ func (w *appWindow) readForm() formValues {
 		username:       w.login.Text(),
 		password:       w.password.Text(),
 	}
+}
+
+// readPersistedSettings маппит текущие form values в PersistedSettings,
+// явно отбрасывая credentials. Порт при невалидном значении — DefaultPort.
+func (w *appWindow) readPersistedSettings() proxy.PersistedSettings {
+	values := w.readForm()
+	settings := proxy.PersistedSettings{
+		AuthEnabled: values.authEnabled,
+	}
+	if values.interfaceIndex >= 0 && values.interfaceIndex < len(w.interfaces) {
+		settings.InterfaceName = w.interfaces[values.interfaceIndex].Name
+	}
+	port, err := parsePort(values.port)
+	if err != nil {
+		port = proxy.DefaultPort
+	}
+	settings.Port = port
+	return settings
+}
+
+// saveSettingsBestEffort сохраняет захваченные при закрытии настройки.
+// Ошибка записи игнорируется — persistence best-effort, не critical path.
+func (w *appWindow) saveSettingsBestEffort() {
+	_ = w.service.SaveSettings(w.pendingSettings)
+}
+
+// applyInitialSettings применяет загруженные из snapshot настройки к форме:
+// выбирает интерфейс по имени, устанавливает порт и auth checkbox.
+func (w *appWindow) applyInitialSettings() {
+	config := w.service.Snapshot().Config
+	for i, iface := range w.interfaces {
+		if iface.Name == config.Interface.Name {
+			w.iface.SelectIndex(i)
+			break
+		}
+	}
+	if config.Port >= proxy.MinPort {
+		w.port.SetText(strconv.Itoa(int(config.Port)))
+	}
+	w.auth.SetCheck(config.AuthEnabled)
 }
 
 func (w *appWindow) previewAddress() string {
@@ -665,6 +709,7 @@ func (w *appWindow) close() {
 	if w.closing {
 		return
 	}
+	w.pendingSettings = w.readPersistedSettings()
 	snapshot := w.service.Snapshot()
 	active := w.inFlight != operationNone || snapshot.State == proxy.StateStarting ||
 		snapshot.State == proxy.StateRunning || snapshot.State == proxy.StateStopping

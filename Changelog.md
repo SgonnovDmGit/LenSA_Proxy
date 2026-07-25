@@ -4,6 +4,15 @@
 
 Формат основан на Keep a Changelog, версионирование — SemVer.
 
+## [Unreleased]
+
+### Added
+
+- Portable persistence не-secret настроек: interface, port и auth toggle сохраняются в `LenSA_Proxy.ini` рядом с `.exe` при закрытии и восстанавливаются при старте.
+- Пароль не сохраняется и не читается.
+- Tolerant fallback на defaults при отсутствии, повреждении или неполном `.ini`, а также при ненайденном имени интерфейса.
+- Сохранение настроек — best-effort: ошибки записи игнорируются.
+
 ## [0.1.0] — 2026-07-14
 
 ### Added
