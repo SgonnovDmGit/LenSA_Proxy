@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-25
+
 ### Added
 
 - Portable persistence не-secret настроек: interface, port и auth toggle сохраняются в `LenSA_Proxy.ini` рядом с `.exe` при закрытии и восстанавливаются при старте.
