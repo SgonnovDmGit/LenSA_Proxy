@@ -79,6 +79,8 @@ func (s *SettingsStorage) Load() (proxy.PersistedSettings, error) {
 			settings.Port = uint16(port)
 		case "auth":
 			settings.AuthEnabled = value == "1" || strings.EqualFold(value, "true")
+		case "theme":
+			settings.Theme = proxy.ThemeFromString(value)
 		default:
 			// unknown ключ — игнорируем
 		}
@@ -93,6 +95,7 @@ func (s *SettingsStorage) Load() (proxy.PersistedSettings, error) {
 //	interface = Ethernet
 //	port = 8080
 //	auth = 0
+//	theme = system
 //
 // Credentials не сохраняются.
 func (s *SettingsStorage) Save(settings proxy.PersistedSettings) error {
@@ -105,6 +108,7 @@ func (s *SettingsStorage) Save(settings proxy.PersistedSettings) error {
 		auth = "1"
 	}
 	fmt.Fprintf(&b, "auth = %s\n", auth)
+	fmt.Fprintf(&b, "theme = %s\n", settings.Theme.String())
 	// Препендим UTF-8 BOM, чтобы Windows-редакторы корректно открывали файл.
 	content := append(utf8BOM, b.String()...)
 	return os.WriteFile(s.path, content, 0644)

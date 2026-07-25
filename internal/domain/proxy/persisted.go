@@ -6,14 +6,16 @@ type PersistedSettings struct {
 	InterfaceName string
 	Port          uint16
 	AuthEnabled   bool
+	Theme         Theme
 }
 
 // DefaultPersistedSettings возвращает настройки по умолчанию:
-// пустой интерфейс, DefaultPort, авторизация выключена.
+// пустой интерфейс, DefaultPort, авторизация выключена, ThemeSystem.
 func DefaultPersistedSettings() PersistedSettings {
 	return PersistedSettings{
 		InterfaceName: "",
 		Port:          DefaultPort,
 		AuthEnabled:   false,
+		Theme:         DefaultTheme(),
 	}
 }

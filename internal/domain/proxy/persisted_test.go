@@ -8,6 +8,7 @@ func TestDefaultPersistedSettings(t *testing.T) {
 		InterfaceName: "",
 		Port:          DefaultPort,
 		AuthEnabled:   false,
+		Theme:         ThemeSystem,
 	}
 	if got != want {
 		t.Fatalf("DefaultPersistedSettings() = %+v, want %+v", got, want)

@@ -96,6 +96,7 @@ func TestLoadRoundTrip(t *testing.T) {
 		InterfaceName: "Ethernet",
 		Port:          9090,
 		AuthEnabled:   true,
+		Theme:         proxy.ThemeDark,
 	}
 	if err := storage.Save(original); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -123,7 +124,7 @@ func TestLoadRoundTrip(t *testing.T) {
 func TestLoadFileWithBOM(t *testing.T) {
 	// Файл с UTF-8 BOM в начале (ручная запись BOM + content) —
 	// Load должен отрезать BOM и корректно распарсить настройки.
-	content := []byte("[connection]\ninterface = Ethernet\nport = 8080\nauth = 1\n")
+	content := []byte("[connection]\ninterface = Ethernet\nport = 8080\nauth = 1\ntheme = dark\n")
 	file := append([]byte{0xEF, 0xBB, 0xBF}, content...)
 	path := filepath.Join(t.TempDir(), "bom.ini")
 	if err := os.WriteFile(path, file, 0644); err != nil {
@@ -139,6 +140,7 @@ func TestLoadFileWithBOM(t *testing.T) {
 		InterfaceName: "Ethernet",
 		Port:          8080,
 		AuthEnabled:   true,
+		Theme:         proxy.ThemeDark,
 	}
 	if got != want {
 		t.Fatalf("Load() = %+v, want %+v", got, want)
@@ -148,7 +150,7 @@ func TestLoadFileWithBOM(t *testing.T) {
 func TestLoadFileWithoutBOM(t *testing.T) {
 	// Файл без BOM — обратная совместимость: Load должен работать
 	// так же, как и с BOM.
-	content := "[connection]\ninterface = Wi-Fi\nport = 3128\nauth = 0\n"
+	content := "[connection]\ninterface = Wi-Fi\nport = 3128\nauth = 0\ntheme = light\n"
 	path := filepath.Join(t.TempDir(), "no-bom.ini")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -163,6 +165,7 @@ func TestLoadFileWithoutBOM(t *testing.T) {
 		InterfaceName: "Wi-Fi",
 		Port:          3128,
 		AuthEnabled:   false,
+		Theme:         proxy.ThemeLight,
 	}
 	if got != want {
 		t.Fatalf("Load() = %+v, want %+v", got, want)
@@ -180,6 +183,7 @@ func TestLoadIgnoresUnknownKeysAndExtraSections(t *testing.T) {
 		"interface = Ethernet",
 		"port = 8080",
 		"auth = 1",
+		"theme = system",
 		"extra = ignored",
 		"",
 	}, "\n")
@@ -197,6 +201,7 @@ func TestLoadIgnoresUnknownKeysAndExtraSections(t *testing.T) {
 		InterfaceName: "Ethernet",
 		Port:          8080,
 		AuthEnabled:   true,
+		Theme:         proxy.ThemeSystem,
 	}
 	if got != want {
 		t.Fatalf("Load() = %+v, want %+v (unknown keys/sections must be ignored)", got, want)
@@ -211,6 +216,7 @@ func TestSaveCreatesCorrectFile(t *testing.T) {
 		InterfaceName: "Wi-Fi",
 		Port:          3128,
 		AuthEnabled:   false,
+		Theme:         proxy.ThemeDark,
 	}
 	if err := storage.Save(settings); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -237,7 +243,72 @@ func TestSaveCreatesCorrectFile(t *testing.T) {
 	if !strings.Contains(content, "auth = 0") {
 		t.Fatalf("saved file missing auth key:\n%s", content)
 	}
+	if !strings.Contains(content, "theme = dark") {
+		t.Fatalf("saved file missing theme key:\n%s", content)
+	}
 	if strings.Contains(content, "password") || strings.Contains(content, "username") {
 		t.Fatalf("saved file must not contain credentials:\n%s", content)
+	}
+}
+
+func TestLoadThemeFromIni(t *testing.T) {
+	tests := []struct {
+		name  string
+		theme string
+		want  proxy.Theme
+	}{
+		{name: "light", theme: "light", want: proxy.ThemeLight},
+		{name: "dark", theme: "dark", want: proxy.ThemeDark},
+		{name: "system", theme: "system", want: proxy.ThemeSystem},
+		{name: "empty defaults to system", theme: "", want: proxy.ThemeSystem},
+		{name: "unknown defaults to system", theme: "auto", want: proxy.ThemeSystem},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := "[connection]\ninterface = Ethernet\nport = 8080\nauth = 0\n"
+			if tt.theme != "" {
+				content += "theme = " + tt.theme + "\n"
+			}
+			path := filepath.Join(t.TempDir(), "theme.ini")
+			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+			storage := NewSettingsStorage(path)
+
+			got, err := storage.Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v, want nil", err)
+			}
+			if got.Theme != tt.want {
+				t.Fatalf("Theme = %d, want %d", got.Theme, tt.want)
+			}
+		})
+	}
+}
+
+func TestSaveThemeRoundTrip(t *testing.T) {
+	themes := []proxy.Theme{proxy.ThemeLight, proxy.ThemeDark, proxy.ThemeSystem}
+	for _, theme := range themes {
+		t.Run(theme.String(), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "theme-rt.ini")
+			storage := NewSettingsStorage(path)
+
+			original := proxy.PersistedSettings{
+				InterfaceName: "Ethernet",
+				Port:          8080,
+				AuthEnabled:   true,
+				Theme:         theme,
+			}
+			if err := storage.Save(original); err != nil {
+				t.Fatalf("Save() error = %v", err)
+			}
+			got, err := storage.Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got.Theme != theme {
+				t.Fatalf("round-trip Theme = %d, want %d", got.Theme, theme)
+			}
+		})
 	}
 }

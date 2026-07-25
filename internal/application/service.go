@@ -67,6 +67,7 @@ type Service struct {
 	serverFactory   ServerFactory
 	settingsLoader  SettingsLoader
 	settingsSaver   SettingsSaver
+	loadedSettings  proxy.PersistedSettings
 	snapshot        proxy.Snapshot
 	server          Server
 }
@@ -81,6 +82,7 @@ func NewService(interfaceSource InterfaceSource, serverFactory ServerFactory, op
 	service := &Service{
 		interfaceSource: interfaceSource,
 		serverFactory:   serverFactory,
+		loadedSettings:  proxy.DefaultPersistedSettings(),
 		snapshot: proxy.Snapshot{
 			State: proxy.StateStopped,
 			Config: proxy.Config{
@@ -101,7 +103,11 @@ func NewService(interfaceSource InterfaceSource, serverFactory ServerFactory, op
 // applyPersistedSettings применяет загруженные настройки к initial snapshot.
 // InterfaceName ищется среди обнаруженных интерфейсов; если не найден или пуст —
 // fallback на первый доступный. Port валидируется, при невалидности — DefaultPort.
+// Theme сохраняется в loadedSettings для последующего чтения presentation-слоем.
 func (s *Service) applyPersistedSettings(settings proxy.PersistedSettings) {
+	s.snapshotMutex.Lock()
+	s.loadedSettings = settings
+	s.snapshotMutex.Unlock()
 	port := settings.Port
 	if port < proxy.MinPort {
 		port = proxy.DefaultPort
@@ -138,6 +144,15 @@ func (s *Service) SaveSettings(settings proxy.PersistedSettings) error {
 		return nil
 	}
 	return s.settingsSaver(settings)
+}
+
+// LoadedSettings возвращает настройки, загруженные при старте через SettingsLoader.
+// Presentation-слой использует Theme из loadedSettings для выбора палитры.
+// Если loader не задан — возвращает defaults.
+func (s *Service) LoadedSettings() proxy.PersistedSettings {
+	s.snapshotMutex.RLock()
+	defer s.snapshotMutex.RUnlock()
+	return s.loadedSettings
 }
 
 func (s *Service) Interfaces() ([]proxy.NetworkInterface, error) {

@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LenSA Proxy — темы оформления</title>
+  <style>
+    /* ===== Палитры ===== */
+    :root,
+    [data-theme="light"] {
+      color-scheme: light;
+      --page: #e7ebf0;
+      --window-bg: #f7f8fa;
+      --card-bg: #ffffff;
+      --soft-bg: #f4f6f8;
+      --field-bg: #ffffff;
+      --field-border: #9ca7b5;
+      --text: #1f2937;
+      --muted: #5b6574;
+      --border: #cbd2da;
+      --window-border: #9ca7b5;
+      --titlebar-bg: #f3f3f3;
+      --titlebar-border: #d3d7dc;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-soft-bg: #eef4fc;
+      --accent-soft-border: #7e9bc3;
+      --accent-soft-text: #173e73;
+      --action-red: #dc2626;
+      --action-red-hover: #b91c1c;
+      --status-success: #16a34a;
+      --status-warning: #b45309;
+      --status-danger: #dc2626;
+      --status-muted: #7c8797;
+      --icon-btn-bg: #f7f8fa;
+      --icon-btn-bg-hover: #e9edf2;
+      --icon-btn-copied-border: #56a36e;
+      --icon-btn-copied-bg: #e8f6ec;
+      --icon-btn-copied-text: #146c32;
+      --seg-bg: #ffffff;
+      --seg-active-bg: #e4e8ed;
+      --seg-active-text: #1f2937;
+      --disabled-bg: #edf0f3;
+      --disabled-text: #7b8490;
+      --shadow: 0 18px 48px rgba(31, 41, 55, .16);
+      --app-mark-bg: linear-gradient(145deg, #2563eb, #0f766e);
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --page: #0e0f11;
+      --window-bg: #1a1b1e;
+      --card-bg: #252629;
+      --soft-bg: #2d2e32;
+      --field-bg: #1a1b1e;
+      --field-border: #3f4045;
+      --text: #e4e4e7;
+      --muted: #9ca3af;
+      --border: #3f4045;
+      --window-border: #3f4045;
+      --titlebar-bg: #2d2e32;
+      --titlebar-border: #3f4045;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --accent-soft-bg: #1e2a3d;
+      --accent-soft-border: #3b5a8a;
+      --accent-soft-text: #93c5fd;
+      --action-red: #ef4444;
+      --action-red-hover: #f87171;
+      --status-success: #22c55e;
+      --status-warning: #f59e0b;
+      --status-danger: #ef4444;
+      --status-muted: #9ca3af;
+      --icon-btn-bg: #2d2e32;
+      --icon-btn-bg-hover: #3a3b3f;
+      --icon-btn-copied-border: #22c55e;
+      --icon-btn-copied-bg: #1e3a2a;
+      --icon-btn-copied-text: #4ade80;
+      --seg-bg: #252629;
+      --seg-active-bg: #3a3b3f;
+      --seg-active-text: #e4e4e7;
+      --disabled-bg: #2d2e32;
+      --disabled-text: #6b7280;
+      --shadow: 0 18px 48px rgba(0, 0, 0, .55);
+      --app-mark-bg: linear-gradient(145deg, #3b82f6, #14b8a6);
+    }
+
+    /* Системная тема: читает prefers-color-scheme */
+    [data-theme="system"] {
+      color-scheme: light dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      [data-theme="system"] {
+        color-scheme: dark;
+        --page: #0e0f11;
+        --window-bg: #1a1b1e;
+        --card-bg: #252629;
+        --soft-bg: #2d2e32;
+        --field-bg: #1a1b1e;
+        --field-border: #3f4045;
+        --text: #e4e4e7;
+        --muted: #9ca3af;
+        --border: #3f4045;
+        --window-border: #3f4045;
+        --titlebar-bg: #2d2e32;
+        --titlebar-border: #3f4045;
+        --accent: #3b82f6;
+        --accent-hover: #60a5fa;
+        --accent-soft-bg: #1e2a3d;
+        --accent-soft-border: #3b5a8a;
+        --accent-soft-text: #93c5fd;
+        --action-red: #ef4444;
+        --action-red-hover: #f87171;
+        --status-success: #22c55e;
+        --status-warning: #f59e0b;
+        --status-danger: #ef4444;
+        --status-muted: #9ca3af;
+        --icon-btn-bg: #2d2e32;
+        --icon-btn-bg-hover: #3a3b3f;
+        --icon-btn-copied-border: #22c55e;
+        --icon-btn-copied-bg: #1e3a2a;
+        --icon-btn-copied-text: #4ade80;
+        --seg-bg: #252629;
+        --seg-active-bg: #3a3b3f;
+        --seg-active-text: #e4e4e7;
+        --disabled-bg: #2d2e32;
+        --disabled-text: #6b7280;
+        --shadow: 0 18px 48px rgba(0, 0, 0, .55);
+        --app-mark-bg: linear-gradient(145deg, #3b82f6, #14b8a6);
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 34px 16px 30px;
+      background: var(--page);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+      transition: background .18s ease, color .18s ease;
+    }
+
+    button, input, select { font: inherit; }
+    button, select, input[type="checkbox"] { cursor: pointer; }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    /* ===== Окно ===== */
+    .window {
+      width: 560px;
+      overflow: hidden;
+      border: 1px solid var(--window-border);
+      border-radius: 7px;
+      background: var(--window-bg);
+      box-shadow: var(--shadow);
+      transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      height: 36px;
+      border-bottom: 1px solid var(--titlebar-border);
+      background: var(--titlebar-bg);
+      user-select: none;
+      transition: background .18s ease, border-color .18s ease;
+    }
+
+    .app-mark {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      background: var(--app-mark-bg);
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .titlebar-title {
+      flex: 1;
+      padding: 0 9px;
+      font-size: 12px;
+    }
+
+    .window-actions { display: flex; align-self: stretch; }
+    .window-actions span { display: grid; width: 38px; place-items: center; color: var(--muted); }
+    .window-actions span:last-child { font-size: 18px; line-height: 1; }
+
+    .body { padding: 14px; }
+
+    /* ===== Заголовок и theme toggle ===== */
+    .head-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -.2px;
+    }
+
+    .theme-block { flex: 0 0 auto; text-align: right; }
+
+    .seg {
+      display: inline-flex;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--seg-bg);
+      transition: background .18s ease, border-color .18s ease;
+    }
+
+    .seg button {
+      min-height: 28px;
+      padding: 4px 11px;
+      border: 0;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      transition: background .14s ease, color .14s ease;
+    }
+
+    .seg button:hover { color: var(--text); }
+
+    .seg button[aria-pressed="true"] {
+      background: var(--seg-active-bg);
+      color: var(--seg-active-text);
+    }
+
+    .theme-hint {
+      margin: 5px 2px 0;
+      color: var(--muted);
+      font-size: 10.5px;
+      line-height: 1.3;
+    }
+
+    /* ===== Секции ===== */
+    .section-title {
+      margin: 0 4px 6px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .panel {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--card-bg);
+      transition: background .18s ease, border-color .18s ease;
+    }
+
+    .settings-panel { margin-bottom: 11px; }
+    .field + .field { margin-top: 8px; }
+
+    label.field-label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select {
+      width: 100%;
+      min-width: 0;
+      height: 32px;
+      padding: 5px 8px;
+      border: 1px solid var(--field-border);
+      border-radius: 3px;
+      background: var(--field-bg);
+      color: var(--text);
+      transition: background .18s ease, border-color .18s ease, color .18s ease;
+    }
+
+    input:disabled,
+    select:disabled {
+      cursor: not-allowed;
+      background: var(--disabled-bg);
+      color: var(--disabled-text);
+    }
+
+    input[readonly] {
+      cursor: text;
+      background: var(--soft-bg);
+      color: var(--text);
+    }
+
+    .auth-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 34px;
+      margin-top: 6px;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      font-size: 13px;
+    }
+
+    .check-row input { width: 17px; height: 17px; accent-color: var(--accent); }
+
+    .button {
+      min-height: 32px;
+      padding: 5px 10px;
+      border: 1px solid var(--field-border);
+      border-radius: 3px;
+      background: var(--icon-btn-bg);
+      color: var(--text);
+      white-space: nowrap;
+      transition: background .14s ease, border-color .14s ease;
+    }
+
+    .button:hover:not(:disabled) { background: var(--icon-btn-bg-hover); }
+    .button.primary-lite { border-color: var(--accent-soft-border); background: var(--accent-soft-bg); color: var(--accent-soft-text); }
+    .button.primary-lite:hover:not(:disabled) { background: var(--icon-btn-bg-hover); }
+    .button:disabled { cursor: not-allowed; border-color: var(--border); color: var(--disabled-text); background: var(--disabled-bg); }
+
+    .inline-field {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+    }
+
+    .inline-field.password-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+
+    .icon-button {
+      display: grid;
+      width: 34px;
+      min-width: 34px;
+      height: 32px;
+      padding: 0;
+      place-items: center;
+      border: 1px solid var(--field-border);
+      border-radius: 3px;
+      background: var(--icon-btn-bg);
+      color: var(--text);
+      transition: background .14s ease, border-color .14s ease, color .14s ease;
+    }
+
+    .icon-button:hover:not(:disabled) { background: var(--icon-btn-bg-hover); }
+    .icon-button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .icon-button.copied { border-color: var(--icon-btn-copied-border); background: var(--icon-btn-copied-bg); color: var(--icon-btn-copied-text); }
+
+    /* ===== Status panel ===== */
+    .status-panel { padding: 13px 14px 15px; }
+
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .status-dot {
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--status-success);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-success) 22%, transparent);
+    }
+
+    .status-description { margin: 3px 0 9px 21px; color: var(--muted); font-size: 12px; }
+
+    .connection-list {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--soft-bg);
+      transition: background .18s ease, border-color .18s ease;
+    }
+
+    .connection-row {
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr) auto;
+      align-items: stretch;
+      min-height: 34px;
+    }
+
+    .connection-row + .connection-row { border-top: 1px solid var(--border); }
+    .connection-row > span { padding-left: 8px; align-self: center; color: var(--muted); font-size: 11px; }
+    .connection-row code {
+      overflow: hidden;
+      padding: 0 7px;
+      align-self: center;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .connection-row .icon-button {
+      width: 38px;
+      height: auto;
+      min-width: 38px;
+      border-width: 0 0 0 1px;
+      border-color: var(--border);
+      border-radius: 0;
+      background: var(--card-bg);
+    }
+    .connection-row .icon-button:hover:not(:disabled) { background: var(--icon-btn-bg-hover); }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 9px;
+      padding: 0 6px;
+    }
+
+    .meta-row span { display: block; color: var(--muted); font-size: 10px; }
+    .meta-row strong { font-size: 12px; font-weight: 600; }
+
+    .main-button {
+      width: 100%;
+      min-height: 38px;
+      margin-top: 10px;
+      border: 0;
+      border-radius: 4px;
+      background: var(--action-red);
+      color: #ffffff;
+      font-weight: 700;
+      transition: background .14s ease;
+    }
+    .main-button:hover { background: var(--action-red-hover); }
+
+    /* ===== Note ===== */
+    .note {
+      width: 560px;
+      margin: 0;
+      padding: 9px 12px;
+      border: 1px dashed var(--border);
+      border-radius: 5px;
+      background: var(--card-bg);
+      color: var(--muted);
+      font-size: 11.5px;
+      line-height: 1.45;
+      transition: background .18s ease, border-color .18s ease, color .18s ease;
+    }
+  </style>
+</head>
+<body>
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute">
+    <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="1"></rect><path d="M16 8V5H5v11h3"></path></symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"></path><circle cx="12" cy="12" r="2.5"></circle></symbol>
+    <symbol id="icon-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18"></path><path d="M9.4 7.4A10.5 10.5 0 0 1 12 7c6 0 9.5 5 9.5 5a15 15 0 0 1-2.1 2.6M14.6 16.6A10.5 10.5 0 0 1 12 17c-6 0-9.5-5-9.5-5a15 15 0 0 1 2.1-2.6"></path></symbol>
+  </svg>
+
+  <div class="window">
+    <div class="titlebar">
+      <div class="app-mark">LP</div>
+      <div class="titlebar-title">LenSA Proxy — Управление</div>
+      <div class="window-actions"><span>&minus;</span><span>&times;</span></div>
+    </div>
+    <div class="body">
+      <div class="head-row">
+        <h1>LenSA Proxy</h1>
+        <div class="theme-block">
+          <div class="seg" role="group" aria-label="Тема оформления">
+            <button type="button" data-theme="light" aria-pressed="true">Светлая</button>
+            <button type="button" data-theme="dark" aria-pressed="false">Тёмная</button>
+            <button type="button" data-theme="system" aria-pressed="false">Системная</button>
+          </div>
+          <p class="theme-hint">Системная следует теме Windows</p>
+        </div>
+      </div>
+
+      <div class="section-title">Подключение</div>
+      <section class="panel settings-panel">
+        <div class="field">
+          <label class="field-label" for="iface">Сетевой интерфейс</label>
+          <select id="iface" class="locked"><option>Ethernet · 192.168.1.80/24</option></select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="port">Порт</label>
+          <input id="port" class="locked" type="number" value="8080">
+        </div>
+        <div class="auth-head">
+          <label class="check-row"><input class="locked" type="checkbox" checked> Требовать авторизацию</label>
+          <button class="button primary-lite generate" type="button">Сгенерировать</button>
+        </div>
+        <div class="field">
+          <label class="field-label" for="login">Логин</label>
+          <div class="inline-field">
+            <input id="login" class="credential" type="text" value="lensa-4f7c">
+            <button class="icon-button copy" type="button" data-copy="login" aria-label="Копировать логин" title="Копировать логин"><svg><use href="#icon-copy"></use></svg></button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="password">Пароль</label>
+          <div class="inline-field password-row">
+            <input id="password" class="credential password" type="password" value="M7qK9xW4pR2vN8cT">
+            <button class="icon-button reveal" type="button" aria-label="Показать пароль" title="Показать пароль"><svg><use href="#icon-eye"></use></svg></button>
+            <button class="icon-button copy" type="button" data-copy="password" aria-label="Копировать пароль" title="Копировать пароль"><svg><use href="#icon-copy"></use></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel status-panel">
+        <div class="status-line"><span class="status-dot"></span><span class="status-label">РАБОТАЕТ</span></div>
+        <p class="status-description">Прокси доступен в локальной сети</p>
+        <div class="connection-list">
+          <div class="connection-row"><span>Хост</span><code>192.168.1.80</code><button class="icon-button copy" type="button" data-copy="host" aria-label="Копировать хост" title="Копировать хост"><svg><use href="#icon-copy"></use></svg></button></div>
+          <div class="connection-row"><span>Порт</span><code>8080</code><button class="icon-button copy" type="button" data-copy="port" aria-label="Копировать порт" title="Копировать порт"><svg><use href="#icon-copy"></use></svg></button></div>
+        </div>
+        <div class="meta-row"><div><span>Клиенты</span><strong>1</strong></div><div><span>Сеть</span><strong>LAN only</strong></div></div>
+        <button class="main-button" type="button"><span class="running-only">Остановить</span><span class="stopped-only">Запустить</span></button>
+      </section>
+    </div>
+  </div>
+
+  <p class="note">При включённом Windows High Contrast тема не применяется — используются системные цвета.</p>
+
+  <script>
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+    function randomText(length) {
+      const values = new Uint32Array(length);
+      crypto.getRandomValues(values);
+      return Array.from(values, v => alphabet[v % alphabet.length]).join('');
+    }
+
+    /* Theme segmented control */
+    const html = document.documentElement;
+    function setTheme(theme) {
+      html.dataset.theme = theme;
+      document.querySelectorAll('.seg button').forEach(btn => {
+        btn.setAttribute('aria-pressed', String(btn.dataset.theme === theme));
+      });
+    }
+    document.querySelectorAll('.seg button').forEach(btn => {
+      btn.addEventListener('click', () => setTheme(btn.dataset.theme));
+    });
+
+    /* Generate credentials */
+    document.querySelectorAll('.generate').forEach(btn => btn.addEventListener('click', () => {
+      document.getElementById('login').value = 'lensa-' + randomText(6).toLowerCase();
+      document.getElementById('password').value = randomText(18);
+    }));
+
+    /* Reveal password */
+    document.querySelectorAll('.reveal').forEach(btn => btn.addEventListener('click', () => {
+      const pwd = document.getElementById('password');
+      const visible = pwd.type === 'text';
+      pwd.type = visible ? 'password' : 'text';
+      const label = visible ? 'Показать пароль' : 'Скрыть пароль';
+      btn.setAttribute('aria-label', label);
+      btn.title = label;
+      btn.querySelector('use').setAttribute('href', visible ? '#icon-eye' : '#icon-eye-off');
+    }));
+
+    /* Copy */
+    document.querySelectorAll('.copy').forEach(btn => btn.addEventListener('click', async () => {
+      const kind = btn.dataset.copy;
+      let text = '';
+      if (kind === 'host') text = '192.168.1.80';
+      else if (kind === 'port') text = '8080';
+      else if (kind === 'login') text = document.getElementById('login').value;
+      else if (kind === 'password') text = document.getElementById('password').value;
+      try { await navigator.clipboard.writeText(text); } catch (e) { /* mockup */ }
+      btn.classList.add('copied');
+      setTimeout(() => btn.classList.remove('copied'), 900);
+    }));
+
+    /* Running state: в макете показываем статус "РАБОТАЕТ", кнопка "Остановить" */
+  </script>
+</body>
+</html>
