@@ -23,7 +23,7 @@ import (
 
 const (
 	windowWidth       = 560
-	windowHeight      = 567
+	windowHeight      = 579
 	snapshotTimerID   = 1
 	snapshotInterval  = 200
 	iconResourceID    = 2
@@ -116,6 +116,7 @@ type appWindow struct {
 	resources       *windowResources
 	wnd             *ui.Main
 	title           *ui.Static
+	versionLabel    *ui.Static
 	section         *ui.Static
 	themeLight      *ui.Button
 	themeDark       *ui.Button
@@ -162,20 +163,21 @@ type appWindow struct {
 	timer           bool
 	passwordVisible bool
 	passwordMask    win.WPARAM
+	version         string
 	tooltip         win.HWND
 	tooltipTexts    [][]uint16
 	tooltipInfos    []*tooltipInfo
 }
 
-func Run(service Service) (int, error) {
-	return run(service, 0)
+func Run(service Service, version string) (int, error) {
+	return run(service, 0, version)
 }
 
-func RunPackaged(service Service) (int, error) {
-	return run(service, iconResourceID)
+func RunPackaged(service Service, version string) (int, error) {
+	return run(service, iconResourceID, version)
 }
 
-func run(service Service, iconID uint16) (int, error) {
+func run(service Service, iconID uint16, version string) (int, error) {
 	if service == nil {
 		return 1, errors.New("windows service is nil")
 	}
@@ -191,12 +193,12 @@ func run(service Service, iconID uint16) (int, error) {
 		return 1, err
 	}
 	defer resources.close()
-	window := newAppWindow(service, interfaces, resources, iconID, theme, highContrast)
+	window := newAppWindow(service, interfaces, resources, iconID, theme, highContrast, version)
 	window.bindEvents()
 	return window.wnd.RunAsMain(), nil
 }
 
-func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resources *windowResources, iconID uint16, theme proxy.Theme, highContrast bool) *appWindow {
+func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resources *windowResources, iconID uint16, theme proxy.Theme, highContrast bool, version string) *appWindow {
 	clientWidth, clientHeight := ui.Dpi(windowWidth, windowHeight)
 	options := ui.OptsMain().
 		Title("LenSA Proxy").
@@ -216,6 +218,7 @@ func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resource
 		highContrast: highContrast,
 		results:      make(chan operationResult, 4),
 		closeResult:  make(chan bool, 1),
+		version:      version,
 	}
 	window.createControls()
 	return window
@@ -229,6 +232,12 @@ func (w *appWindow) createControls() {
 		Size(ui.Dpi(310, 30)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
 		Layout(resize))
+	w.versionLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
+		Text(form.VersionText(w.version)).
+		Position(w.versionLabelX(), ui.DpiY(31)).
+		Size(ui.Dpi(140, 16)).
+		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
+		Layout(ui.LAY_HOLD_HOLD))
 	w.themeLight = ui.NewButton(w.wnd, ui.OptsButton().
 		Text("Светлая").
 		Position(ui.Dpi(340, 20)).
@@ -368,7 +377,7 @@ func (w *appWindow) createControls() {
 
 	statusFill := ui.NewStatic(w.wnd, ui.OptsStatic().
 		Position(ui.Dpi(20, 375)).
-		Size(ui.Dpi(520, 172)).
+		Size(ui.Dpi(520, 184)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
 		Layout(ui.LAY_RESIZE_RESIZE))
 	w.statusDot = ui.NewStatic(w.wnd, ui.OptsStatic().
@@ -425,7 +434,7 @@ func (w *appWindow) createControls() {
 		Size(ui.Dpi(242, 17)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.action = ui.NewButton(w.wnd, ui.OptsButton().
-		Position(ui.Dpi(38, 507)).
+		Position(ui.Dpi(38, 517)).
 		Width(ui.DpiX(484)).
 		Height(ui.DpiY(34)).
 		CtrlStyle(co.BS_OWNERDRAW).
@@ -435,7 +444,7 @@ func (w *appWindow) createControls() {
 		w.hostLabel, w.clientsName, w.clients, w.networkName, w.network,
 	}
 	w.muted = []*ui.Static{
-		w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel, w.description,
+		w.versionLabel, w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel, w.description,
 		w.hostLabel, w.clientsName, w.networkName,
 	}
 }
@@ -546,8 +555,29 @@ func (w *appWindow) bindEvents() {
 	})
 }
 
+// versionLabelX возвращает X-координату лейбла версии — сразу за текстом
+// заголовка, измеренным title-шрифтом через GDI.
+func (w *appWindow) versionLabelX() int {
+	fallback := ui.DpiX(190)
+	hdc, err := w.wnd.Hwnd().GetDC()
+	if err != nil {
+		return fallback
+	}
+	defer w.wnd.Hwnd().ReleaseDC(hdc)
+	oldFont, err := hdc.SelectObjectFont(w.resources.titleFont)
+	if err == nil {
+		defer func() { _, _ = hdc.SelectObjectFont(oldFont) }()
+	}
+	size, err := hdc.GetTextExtentPoint32("LenSA Proxy")
+	if err != nil {
+		return fallback
+	}
+	return ui.DpiX(20) + int(size.Cx) + ui.DpiX(10)
+}
+
 func (w *appWindow) applyFonts() {
 	setControlFont(w.title.Hwnd(), w.resources.titleFont)
+	setControlFont(w.versionLabel.Hwnd(), w.resources.toggleFont)
 	setControlFont(w.section.Hwnd(), w.resources.sectionFont)
 	setControlFont(w.statusDot.Hwnd(), w.resources.titleFont)
 	setControlFont(w.statusText.Hwnd(), w.resources.statusFont)

@@ -44,7 +44,7 @@ func main() {
 	if packaged == "true" {
 		run = windows.RunPackaged
 	}
-	code, err := run(service)
+	code, err := run(service, version)
 	if err != nil {
 		showStartupError()
 		os.Exit(1)

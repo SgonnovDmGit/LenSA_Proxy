@@ -96,11 +96,12 @@ type appWindow struct {
 	ready           bool
 	closing         bool
 	passwordVisible bool
+	version         string
 }
 
 // Run создаёт окно и конфигурирует Fyne-приложение. Вызывается из run.go
 // после app.New, чтобы этот файл не тянул glfw (CGO) в view-тесты.
-func Run(fyneApp fyne.App, service Service) (int, error) {
+func Run(fyneApp fyne.App, service Service, version string) (int, error) {
 	if service == nil {
 		return 1, errors.New("fyne service is nil")
 	}
@@ -111,7 +112,7 @@ func Run(fyneApp fyne.App, service Service) (int, error) {
 	themeMode := service.LoadedSettings().Theme
 	fyneTheme := newLensaTheme(themeMode)
 	fyneApp.Settings().SetTheme(fyneTheme)
-	w := newAppWindow(fyneApp, service, interfaces, fyneTheme, themeMode)
+	w := newAppWindow(fyneApp, service, interfaces, fyneTheme, themeMode, version)
 	done := make(chan struct{})
 	go w.runTicker(done)
 	w.applyInitialSettings()
@@ -120,7 +121,7 @@ func Run(fyneApp fyne.App, service Service) (int, error) {
 	return 0, nil
 }
 
-func newAppWindow(fyneApp fyne.App, service Service, interfaces []proxy.NetworkInterface, lensaTheme *lensaTheme, themeMode proxy.Theme) *appWindow {
+func newAppWindow(fyneApp fyne.App, service Service, interfaces []proxy.NetworkInterface, lensaTheme *lensaTheme, themeMode proxy.Theme, version string) *appWindow {
 	window := fyneApp.NewWindow("LenSA Proxy")
 	w := &appWindow{
 		app:          fyneApp,
@@ -129,6 +130,7 @@ func newAppWindow(fyneApp fyne.App, service Service, interfaces []proxy.NetworkI
 		lensaTheme:   lensaTheme,
 		interfaces:   append([]proxy.NetworkInterface(nil), interfaces...),
 		currentTheme: themeMode,
+		version:      version,
 	}
 	window.SetIcon(fyne.NewStaticResource("lensa-proxy.png", iconPNG))
 	window.SetContent(w.buildContent())
@@ -145,7 +147,9 @@ func (w *appWindow) buildContent() fyne.CanvasObject {
 	w.themeGroup.Horizontal = true
 	w.themeGroup.Required = true
 	title := widget.NewLabelWithStyle("LenSA Proxy", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	header := container.NewBorder(nil, nil, title, w.themeGroup)
+	header := container.NewBorder(nil, nil,
+		container.NewHBox(title, widget.NewLabel(form.VersionText(w.version))),
+		w.themeGroup)
 
 	w.iface = w.newInterfaceSelect()
 	w.port = widget.NewEntry()

@@ -69,7 +69,7 @@ func newTestWindow(service *fakeService) *appWindow {
 	fyneApp := test.NewApp()
 	lensaTheme := newLensaTheme(service.settings.Theme)
 	fyneApp.Settings().SetTheme(lensaTheme)
-	return newAppWindow(fyneApp, service, service.interfaces, lensaTheme, service.settings.Theme)
+	return newAppWindow(fyneApp, service, service.interfaces, lensaTheme, service.settings.Theme, "test")
 }
 
 func newFakeService() *fakeService {

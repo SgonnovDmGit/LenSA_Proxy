@@ -36,7 +36,7 @@ func main() {
 		showStartupError()
 		os.Exit(1)
 	}
-	code, err := fyneui.RunApp(service)
+	code, err := fyneui.RunApp(service, version)
 	if err != nil {
 		showStartupError()
 		os.Exit(1)

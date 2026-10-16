@@ -211,6 +211,18 @@ func ParsePort(value string) (uint16, error) {
 // пользователю: message показывается только если входит в список известных
 // безопасных текстов (не несёт технических деталей), иначе — fallback,
 // а при пустом fallback — общее «Не удалось выполнить операцию».
+// VersionText форматирует версию для отображения рядом с заголовком:
+// semver получает префикс «v», остальные значения (dev) выводятся как есть.
+func VersionText(version string) string {
+	if version == "" {
+		return ""
+	}
+	if version[0] >= '0' && version[0] <= '9' {
+		return "v" + version
+	}
+	return version
+}
+
 func SafeServiceMessage(message, fallback string) string {
 	message = strings.TrimSpace(message)
 	for _, safe := range []string{
