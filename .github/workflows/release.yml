@@ -13,11 +13,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  validate:
     runs-on: windows-latest
-    timeout-minutes: 30
-    env:
-      GH_TOKEN: ${{ github.token }}
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.tag.outputs.RELEASE_TAG }}
+      version: ${{ steps.tag.outputs.RELEASE_VERSION }}
+      commit: ${{ steps.tag.outputs.RELEASE_COMMIT }}
+      prerelease: ${{ steps.tag.outputs.IS_PRERELEASE }}
 
     steps:
       - name: Checkout tagged source
@@ -26,6 +29,7 @@ jobs:
           fetch-depth: 0
 
       - name: Validate release tag
+        id: tag
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -62,10 +66,19 @@ jobs:
           }
 
           $isPrerelease = $version.Contains("-")
-          "RELEASE_TAG=$env:RELEASE_TAG" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          "RELEASE_VERSION=$version" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          "RELEASE_COMMIT=$tagCommit" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          "IS_PRERELEASE=$($isPrerelease.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_TAG=$env:RELEASE_TAG" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "RELEASE_VERSION=$version" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "RELEASE_COMMIT=$tagCommit" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "IS_PRERELEASE=$($isPrerelease.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+  build-windows:
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
@@ -97,14 +110,107 @@ jobs:
       - name: Build modern amd64
         shell: pwsh
         run: |
-          $commit = $env:RELEASE_COMMIT.Substring(0, 12)
-          .\scripts\build-modern.ps1 -Version $env:RELEASE_VERSION -Commit $commit -OutputDirectory dist
+          $commit = "${{ needs.validate.outputs.commit }}".Substring(0, 12)
+          .\scripts\build-modern.ps1 -Version "${{ needs.validate.outputs.version }}" -Commit $commit -OutputDirectory dist
 
       - name: Build legacy 386
         shell: pwsh
         run: |
-          $commit = $env:RELEASE_COMMIT.Substring(0, 12)
-          .\scripts\build-legacy.ps1 -Version $env:RELEASE_VERSION -Commit $commit -OutputDirectory dist
+          $commit = "${{ needs.validate.outputs.commit }}".Substring(0, 12)
+          .\scripts\build-legacy.ps1 -Version "${{ needs.validate.outputs.version }}" -Commit $commit -OutputDirectory dist
+
+      - name: Upload windows artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-windows
+          path: |
+            dist/LenSA_Proxy_windows_amd64.exe
+            dist/LenSA_Proxy_windows_legacy_386.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  build-unix:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, goos: linux, goarch: amd64 }
+          - { os: ubuntu-24.04-arm, goos: linux, goarch: arm64 }
+          - { os: macos-13, goos: darwin, goarch: amd64 }
+          - { os: macos-latest, goos: darwin, goarch: arm64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: 1.26.1
+          cache: true
+
+      - name: Install Fyne build dependencies
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -timeout=60s ./...
+
+      - name: Build unix artifact
+        env:
+          GOOS_TARGET: ${{ matrix.goos }}
+          GOARCH_TARGET: ${{ matrix.goarch }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+        run: ./scripts/build-unix.sh
+
+      - name: Upload unix artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/LenSA_Proxy_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [validate, build-windows, build-unix]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      IS_PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
 
       - name: Create checksums and release notes
         shell: pwsh
@@ -112,6 +218,10 @@ jobs:
           $artifactNames = @(
             "LenSA_Proxy_windows_amd64.exe"
             "LenSA_Proxy_windows_legacy_386.exe"
+            "LenSA_Proxy_linux_amd64.tar.gz"
+            "LenSA_Proxy_linux_arm64.tar.gz"
+            "LenSA_Proxy_darwin_amd64.tar.gz"
+            "LenSA_Proxy_darwin_arm64.tar.gz"
           )
           $checksumLines = foreach ($name in $artifactNames) {
             $path = Join-Path "dist" $name
@@ -139,7 +249,7 @@ jobs:
             $stableVersion = $env:RELEASE_VERSION.Split("-")[0]
             $intro = "> Предварительная сборка для ручной проверки перед стабильным ``v$stableVersion``. Legacy-совместимость считается неподтверждённой до целевого smoke."
           } else {
-            $intro = "Portable-релиз LenSA Proxy ``$env:RELEASE_VERSION`` для Windows. Legacy 386 executable является compatibility-сборкой без подтверждённого runtime smoke на целевой legacy ОС."
+            $intro = "Portable-релиз LenSA Proxy ``$env:RELEASE_VERSION`` для Windows, Linux и macOS. Legacy 386 executable является compatibility-сборкой без подтверждённого runtime smoke на целевой legacy ОС."
           }
           $notes = @(
             $intro
@@ -148,7 +258,7 @@ jobs:
             ""
             "### Проверка загрузки"
             ""
-            "Скачайте ``SHA256SUMS.txt`` и сверьте SHA-256 выбранного executable перед запуском."
+            "Скачайте ``SHA256SUMS.txt`` и сверьте SHA-256 выбранного артефакта перед запуском."
           ) -join "`r`n"
           [IO.File]::WriteAllText(
             (Join-Path $PWD "dist\release-notes.md"),
@@ -179,6 +289,10 @@ jobs:
           $assets = @(
             "dist\LenSA_Proxy_windows_amd64.exe#Windows x64"
             "dist\LenSA_Proxy_windows_legacy_386.exe#Legacy Windows x86"
+            "dist\LenSA_Proxy_linux_amd64.tar.gz#Linux x64"
+            "dist\LenSA_Proxy_linux_arm64.tar.gz#Linux ARM64"
+            "dist\LenSA_Proxy_darwin_amd64.tar.gz#macOS Intel"
+            "dist\LenSA_Proxy_darwin_arm64.tar.gz#macOS Apple Silicon"
             "dist\SHA256SUMS.txt#SHA-256 checksums"
           )
           $arguments = @("release", "upload", $env:RELEASE_TAG) + $assets + @("--clobber", "--repo", $env:GITHUB_REPOSITORY)
@@ -193,7 +307,15 @@ jobs:
             throw "Cannot inspect release assets."
           }
           $release = $releaseJson | ConvertFrom-Json
-          $expected = @("LenSA_Proxy_windows_amd64.exe", "LenSA_Proxy_windows_legacy_386.exe", "SHA256SUMS.txt")
+          $expected = @(
+            "LenSA_Proxy_windows_amd64.exe",
+            "LenSA_Proxy_windows_legacy_386.exe",
+            "LenSA_Proxy_linux_amd64.tar.gz",
+            "LenSA_Proxy_linux_arm64.tar.gz",
+            "LenSA_Proxy_darwin_amd64.tar.gz",
+            "LenSA_Proxy_darwin_arm64.tar.gz",
+            "SHA256SUMS.txt"
+          )
           $actual = @($release.assets | ForEach-Object { $_.name })
           $difference = Compare-Object $expected $actual
           if ($difference) {
