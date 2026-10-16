@@ -12,7 +12,9 @@
 
 - `LenSA_Proxy_windows_amd64.exe` — современная Windows x64;
 - `LenSA_Proxy_windows_legacy_386.exe` — неподтверждённая compatibility-сборка для legacy Windows x86/x64;
-- `SHA256SUMS.txt` — контрольные суммы обеих сборок.
+- `LenSA_Proxy_linux_amd64.tar.gz` / `LenSA_Proxy_linux_arm64.tar.gz` — Linux;
+- `LenSA_Proxy_darwin_amd64.tar.gz` / `LenSA_Proxy_darwin_arm64.tar.gz` — macOS Intel / Apple Silicon;
+- `SHA256SUMS.txt` — контрольные суммы всех артефактов.
 
 Executable пока не подписаны коммерческим сертификатом, поэтому Windows SmartScreen может показать предупреждение о неизвестном издателе. Перед запуском сверьте файл с опубликованной SHA-256:
 
@@ -47,10 +49,19 @@ Get-FileHash .\LenSA_Proxy_windows_amd64.exe -Algorithm SHA256
 - системная тема: запрос Windows 10+ dark preference через registry; Windows 7 — всегда light;
 - High Contrast detection: при активном HC theme toggle отключён, используются системные цвета.
 
+## Возможности v1.0.0
+
+- кроссплатформенность: нативное окно на Linux и macOS (Fyne) с паритетом формы Windows-версии — тот же набор полей, действий и русский текст интерфейса;
+- безопасное хранение credentials: при включённой авторизации пара логин/пароль сохраняется в системное хранилище ОС после успешного запуска proxy — Windows Credential Manager, macOS Keychain, Linux Secret Service;
+- при следующем старте пара восстанавливается в поля формы автоматически;
+- при выключенной авторизации сохранённая запись удаляется из хранилища после успешного Start;
+- ошибка Start не трогает сохранённые credentials; недоступность системного хранилища не мешает работе proxy — окно показывает предупреждение, пара живёт только в памяти сессии;
+- `LenSA_Proxy.ini` по-прежнему хранит только не-secret настройки (интерфейс, порт, auth toggle, тема) и работает на всех платформах рядом с бинарём;
+- release-артефакты собираются нативно на каждой платформе (CGO для Fyne).
+
 ## Не входит в v0.1.0
 
 - локализация;
-- сохранение пароля;
 - tray, автозапуск и Windows Service;
 - автоматическое изменение Windows Firewall;
 - SOCKS, VPN, TUN/TAP и transparent proxy;
@@ -68,7 +79,7 @@ Get-FileHash .\LenSA_Proxy_windows_amd64.exe -Algorithm SHA256
 7. Если Windows Firewall запросит разрешение, разрешайте доступ только для доверенной частной сети. Приложение само firewall rules не создаёт.
 8. Переключайте тему (Светлая/Тёмная/Системная) кнопками в header окна. Выбор сохраняется в `.ini` и восстанавливается при следующем запуске. При активном Windows High Contrast theme toggle отключён.
 
-При закрытии приложение сохраняет выбранный интерфейс, порт, состояние авторизации и тему в `LenSA_Proxy.ini` рядом с `.exe`. При следующем запуске настройки восстанавливаются автоматически. Пароль не сохраняется — его нужно вводить заново. Если `.ini` отсутствует, повреждён или содержит несуществующее имя интерфейса, приложение тихо откатывается к defaults.
+При закрытии приложение сохраняет выбранный интерфейс, порт, состояние авторизации и тему в `LenSA_Proxy.ini` рядом с executable. При следующем запуске настройки восстанавливаются автоматически. Пара логин/пароль сохраняется отдельно — в системном хранилище ОС, только после успешного запуска proxy с включённой авторизацией; при отключённой авторизации запись удаляется. Если `.ini` отсутствует, повреждён или содержит несуществующее имя интерфейса, приложение тихо откатывается к defaults.
 
 ### Проверка через curl
 
@@ -86,6 +97,10 @@ curl.exe -x http://192.168.1.42:8080 -U user:password https://example.com
 |---|---|
 | `LenSA_Proxy_windows_amd64.exe` | Windows 10/11 и современные Windows Server x64 |
 | `LenSA_Proxy_windows_legacy_386.exe` | Неподтверждённая compatibility-сборка для Windows 7/8.1 и legacy Windows Server/RDP, x86/x64 |
+| `LenSA_Proxy_linux_amd64.tar.gz` | Desktop Linux x64 (X11/Wayland, glibc) |
+| `LenSA_Proxy_linux_arm64.tar.gz` | Desktop Linux ARM64 |
+| `LenSA_Proxy_darwin_amd64.tar.gz` | macOS Intel |
+| `LenSA_Proxy_darwin_arm64.tar.gz` | macOS Apple Silicon |
 
 Legacy binary собирается `go-legacy-win7 v1.26.4-1`. Совместимость считается неподтверждённой до runtime smoke на целевой ОС; проверка запланирована на `v0.3.0`.
 
@@ -94,9 +109,20 @@ Legacy binary собирается `go-legacy-win7 v1.26.4-1`. Совмести�
 Требуется официальный Go 1.26.1 или совместимый более новый toolchain.
 
 ```powershell
-.\scripts\build-modern.ps1 -Version 0.1.0
-.\scripts\build-legacy.ps1 -Version 0.1.0
+.\scripts\build-modern.ps1 -Version 1.0.0
+.\scripts\build-legacy.ps1 -Version 1.0.0
 ```
+
+Linux/macOS (нативная сборка, CGO обязателен):
+
+```bash
+# Linux: dev-заголовки Fyne
+sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+
+./scripts/build-unix.sh 1.0.0
+```
+
+`build-unix.sh` собирает `LenSA_Proxy_<os>_<arch>.tar.gz` в `dist/`. Fyne требует CGO и нативные GUI-заголовки, поэтому linux/arm64 собирается на arm64-раннере или arm64-хосте, darwin amd64/arm64 — на соответствующих macOS-хостах.
 
 Modern script использует установленный официальный Go. Legacy script скачивает зафиксированный Windows amd64 archive `go-legacy-win7 v1.26.4-1`, проверяет SHA-256 и cross-компилирует x86 artifact. Toolchain cache и binaries находятся в ignored `build/`/`dist/`.
 
@@ -123,7 +149,9 @@ Integration suite поднимает локальные HTTP/TLS/TCP backends и
 
 - **Go 1.23 language baseline** — domain, application и network core;
 - **goproxy v1.8.4** — HTTP forward proxy и `CONNECT` engine;
-- **Windigo v0.2.6** — pure-Go Win32 UI;
+- **Windigo v0.2.6** — pure-Go Win32 UI (Windows);
+- **Fyne v2.8.2** — нативный UI для Linux/macOS (CGO);
+- **go-keyring v0.2.8** — системное хранилище credentials (Credential Manager / Keychain / Secret Service);
 - **go-legacy-win7 v1.26.4-1** — отдельный legacy build toolchain;
 - **rsrc v0.10.2** — compile-time icon/manifest resources.
 
@@ -131,14 +159,18 @@ Integration suite поднимает локальные HTTP/TLS/TCP backends и
 
 Слои: `presentation → application → domain ← infrastructure`.
 
-- `cmd/lensa-proxy/` — composition root;
-- `internal/presentation/windows/` — нативный Windows UI;
-- `internal/application/` — Start/Stop state machine и snapshots;
+- `cmd/lensa-proxy/` — composition roots: `main.go` (Windows) и `main_fyne.go` (Linux/macOS) через build-теги;
+- `internal/presentation/windows/` — нативный Windows UI (Windigo);
+- `internal/presentation/fyneui/` — нативный UI для Linux/macOS (Fyne, `linux || darwin || fyneui`);
+- `internal/presentation/form/` — общая view-model формы и парсинг для обоих UI;
+- `internal/application/` — Start/Stop state machine, snapshots и lifecycle credentials;
 - `internal/domain/proxy/` — конфигурация, состояния и инварианты;
 - `internal/infrastructure/network/` — interfaces, ACL, safe resolver/dialer, listener и proxy engine;
+- `internal/infrastructure/keyring/` — системное хранилище credentials;
+- `internal/infrastructure/storage/` — не-secret настройки в `LenSA_Proxy.ini`;
 - `tests/integration/` — end-to-end HTTP/SSE/TLS/CONNECT lifecycle tests.
 
-UI не содержит сетевой логики. Windows-specific код изолирован в presentation/composition root; proxy core не зависит от Windigo.
+UI не содержит сетевой логики. Платформенный код изолирован в presentation/composition roots; proxy core не зависит от Windigo и Fyne. View-тесты fyneui запускаются без CGO: `go test -tags fyneuitest ./internal/presentation/fyneui/` (in-memory driver).
 
 ## Безопасность
 
@@ -147,6 +179,7 @@ UI не содержит сетевой логики. Windows-specific код и
 - private, loopback, link-local, multicast, CGNAT, documentation и local-host targets блокируются;
 - DNS разрешается один раз, dial выполняется к проверенному literal IP;
 - credentials сравниваются через fixed-size SHA-256 digest и constant-time comparison;
+- сохранённые credentials живут только в системном хранилище ОС, никогда — в `.ini`, логах и release-документации;
 - `Proxy-Authorization` и hop-by-hop headers не уходят upstream;
 - request body, credentials, token и полный URL не логируются;
 - Stop закрывает обычные и hijacked `CONNECT` connections;

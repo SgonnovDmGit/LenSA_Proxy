@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/SgonnovDmGit/LenSA_Proxy/internal/domain/proxy"
+	"github.com/SgonnovDmGit/LenSA_Proxy/internal/presentation/form"
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/ui"
 	"github.com/rodrigocfd/windigo/win"
@@ -22,7 +23,7 @@ import (
 
 const (
 	windowWidth       = 560
-	windowHeight      = 567
+	windowHeight      = 579
 	snapshotTimerID   = 1
 	snapshotInterval  = 200
 	iconResourceID    = 2
@@ -61,6 +62,8 @@ type Service interface {
 	Snapshot() proxy.Snapshot
 	SaveSettings(proxy.PersistedSettings) error
 	LoadedSettings() proxy.PersistedSettings
+	LoadedCredentials() (proxy.Credentials, bool)
+	CredentialStoreAvailable() bool
 }
 
 type operation uint8
@@ -113,6 +116,7 @@ type appWindow struct {
 	resources       *windowResources
 	wnd             *ui.Main
 	title           *ui.Static
+	versionLabel    *ui.Static
 	section         *ui.Static
 	themeLight      *ui.Button
 	themeDark       *ui.Button
@@ -134,6 +138,7 @@ type appWindow struct {
 	password        *ui.Edit
 	revealPassword  *ui.Button
 	copyPassword    *ui.Button
+	storeWarning    *ui.Static
 	statusDot       *ui.Static
 	statusText      *ui.Static
 	description     *ui.Static
@@ -150,7 +155,7 @@ type appWindow struct {
 	inFlight        operation
 	pending         proxy.Config
 	pendingSettings proxy.PersistedSettings
-	current         viewModel
+	current         form.ViewModel
 	currentTheme    proxy.Theme
 	highContrast    bool
 	ready           bool
@@ -158,20 +163,23 @@ type appWindow struct {
 	timer           bool
 	passwordVisible bool
 	passwordMask    win.WPARAM
+	version         string
+	savedIfaceIndex int
+	editLocked      map[win.HWND]bool
 	tooltip         win.HWND
 	tooltipTexts    [][]uint16
 	tooltipInfos    []*tooltipInfo
 }
 
-func Run(service Service) (int, error) {
-	return run(service, 0)
+func Run(service Service, version string) (int, error) {
+	return run(service, 0, version)
 }
 
-func RunPackaged(service Service) (int, error) {
-	return run(service, iconResourceID)
+func RunPackaged(service Service, version string) (int, error) {
+	return run(service, iconResourceID, version)
 }
 
-func run(service Service, iconID uint16) (int, error) {
+func run(service Service, iconID uint16, version string) (int, error) {
 	if service == nil {
 		return 1, errors.New("windows service is nil")
 	}
@@ -187,12 +195,12 @@ func run(service Service, iconID uint16) (int, error) {
 		return 1, err
 	}
 	defer resources.close()
-	window := newAppWindow(service, interfaces, resources, iconID, theme, highContrast)
+	window := newAppWindow(service, interfaces, resources, iconID, theme, highContrast, version)
 	window.bindEvents()
 	return window.wnd.RunAsMain(), nil
 }
 
-func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resources *windowResources, iconID uint16, theme proxy.Theme, highContrast bool) *appWindow {
+func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resources *windowResources, iconID uint16, theme proxy.Theme, highContrast bool, version string) *appWindow {
 	clientWidth, clientHeight := ui.Dpi(windowWidth, windowHeight)
 	options := ui.OptsMain().
 		Title("LenSA Proxy").
@@ -212,6 +220,7 @@ func newAppWindow(service Service, interfaces []proxy.NetworkInterface, resource
 		highContrast: highContrast,
 		results:      make(chan operationResult, 4),
 		closeResult:  make(chan bool, 1),
+		version:      version,
 	}
 	window.createControls()
 	return window
@@ -225,6 +234,12 @@ func (w *appWindow) createControls() {
 		Size(ui.Dpi(310, 30)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
 		Layout(resize))
+	w.versionLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
+		Text(form.VersionText(w.version)).
+		Position(w.versionLabelX(), ui.DpiY(31)).
+		Size(ui.Dpi(140, 16)).
+		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
+		Layout(ui.LAY_HOLD_HOLD))
 	w.themeLight = ui.NewButton(w.wnd, ui.OptsButton().
 		Text("Светлая").
 		Position(ui.Dpi(340, 20)).
@@ -278,6 +293,8 @@ func (w *appWindow) createControls() {
 		Texts(interfaceNames...).
 		Select(selected).
 		Layout(resize))
+	w.savedIfaceIndex = selected
+	w.editLocked = map[win.HWND]bool{}
 	w.portLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Порт").
 		Position(ui.Dpi(37, 154)).
@@ -354,11 +371,17 @@ func (w *appWindow) createControls() {
 		Height(ui.DpiY(27)).
 		CtrlStyle(co.BS_OWNERDRAW).
 		Layout(ui.LAY_MOVE_HOLD))
-	w.settingsBox = []*ui.Static{settingsFill, w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel}
+	w.storeWarning = ui.NewStatic(w.wnd, ui.OptsStatic().
+		Text("Системное хранилище недоступно — пароль не сохранится").
+		Position(ui.Dpi(37, 352)).
+		Size(ui.Dpi(486, 13)).
+		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
+		Layout(resize))
+	w.settingsBox = []*ui.Static{settingsFill, w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel, w.storeWarning}
 
 	statusFill := ui.NewStatic(w.wnd, ui.OptsStatic().
 		Position(ui.Dpi(20, 375)).
-		Size(ui.Dpi(520, 172)).
+		Size(ui.Dpi(520, 184)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX).
 		Layout(ui.LAY_RESIZE_RESIZE))
 	w.statusDot = ui.NewStatic(w.wnd, ui.OptsStatic().
@@ -415,7 +438,7 @@ func (w *appWindow) createControls() {
 		Size(ui.Dpi(242, 17)).
 		CtrlStyle(co.SS_LEFT|co.SS_NOPREFIX))
 	w.action = ui.NewButton(w.wnd, ui.OptsButton().
-		Position(ui.Dpi(38, 507)).
+		Position(ui.Dpi(38, 517)).
 		Width(ui.DpiX(484)).
 		Height(ui.DpiY(34)).
 		CtrlStyle(co.BS_OWNERDRAW).
@@ -425,16 +448,30 @@ func (w *appWindow) createControls() {
 		w.hostLabel, w.clientsName, w.clients, w.networkName, w.network,
 	}
 	w.muted = []*ui.Static{
-		w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel, w.description,
+		w.versionLabel, w.ifaceLabel, w.portLabel, w.loginLabel, w.passLabel, w.description,
 		w.hostLabel, w.clientsName, w.networkName,
 	}
 }
 
 func (w *appWindow) bindEvents() {
-	w.iface.On().CbnSelChange(w.onFormChanged)
+	w.iface.On().CbnSelChange(func() {
+		if w.formLocked() {
+			// Контрол не disabled (читаемость), поэтому изменение откатываем.
+			if w.savedIfaceIndex >= 0 {
+				w.iface.SelectIndex(w.savedIfaceIndex)
+			}
+			return
+		}
+		w.savedIfaceIndex = w.iface.SelectedIndex()
+		w.onFormChanged()
+	})
 	w.port.On().EnChange(w.onFormChanged)
 	w.auth.On().BnClicked(func() {
 		if !w.ready {
+			return
+		}
+		if w.formLocked() {
+			w.auth.SetCheck(!w.auth.IsChecked())
 			return
 		}
 		if !w.auth.IsChecked() {
@@ -469,6 +506,7 @@ func (w *appWindow) bindEvents() {
 		w.installTooltips()
 		w.wnd.Hwnd().SendMessage(dialogSetDefaultID, win.WPARAM(w.action.CtrlId()), 0)
 		w.applyInitialSettings()
+		w.updateStoreWarning()
 		w.updateThemeToggle()
 		w.applyControlThemes()
 		if w.highContrast {
@@ -535,8 +573,29 @@ func (w *appWindow) bindEvents() {
 	})
 }
 
+// versionLabelX возвращает X-координату лейбла версии — сразу за текстом
+// заголовка, измеренным title-шрифтом через GDI.
+func (w *appWindow) versionLabelX() int {
+	fallback := ui.DpiX(190)
+	hdc, err := w.wnd.Hwnd().GetDC()
+	if err != nil {
+		return fallback
+	}
+	defer w.wnd.Hwnd().ReleaseDC(hdc)
+	oldFont, err := hdc.SelectObjectFont(w.resources.titleFont)
+	if err == nil {
+		defer func() { _, _ = hdc.SelectObjectFont(oldFont) }()
+	}
+	size, err := hdc.GetTextExtentPoint32("LenSA Proxy")
+	if err != nil {
+		return fallback
+	}
+	return ui.DpiX(20) + int(size.Cx) + ui.DpiX(10)
+}
+
 func (w *appWindow) applyFonts() {
 	setControlFont(w.title.Hwnd(), w.resources.titleFont)
+	setControlFont(w.versionLabel.Hwnd(), w.resources.toggleFont)
 	setControlFont(w.section.Hwnd(), w.resources.sectionFont)
 	setControlFont(w.statusDot.Hwnd(), w.resources.titleFont)
 	setControlFont(w.statusText.Hwnd(), w.resources.statusFont)
@@ -554,19 +613,25 @@ func setControlFont(hwnd win.HWND, font win.HFONT) {
 	hwnd.SendMessage(co.WM_SETFONT, win.WPARAM(font), 1)
 }
 
+// formLocked сообщает, заблокирована ли форма (прокси работает или идёт
+// закрытие). Используется soft-lock контролами, которые остаются enabled.
+func (w *appWindow) formLocked() bool {
+	return w.ready && (w.closing || !w.current.FormEnabled)
+}
+
 func (w *appWindow) onFormChanged() {
 	if w.ready {
 		w.refresh()
 	}
 }
 
-func (w *appWindow) readForm() formValues {
-	return formValues{
-		interfaceIndex: w.iface.SelectedIndex(),
-		port:           w.port.Text(),
-		authEnabled:    w.auth.IsChecked(),
-		username:       w.login.Text(),
-		password:       w.password.Text(),
+func (w *appWindow) readForm() form.FormValues {
+	return form.FormValues{
+		InterfaceIndex: w.iface.SelectedIndex(),
+		Port:           w.port.Text(),
+		AuthEnabled:    w.auth.IsChecked(),
+		Username:       w.login.Text(),
+		Password:       w.password.Text(),
 	}
 }
 
@@ -576,13 +641,13 @@ func (w *appWindow) readForm() formValues {
 func (w *appWindow) readPersistedSettings() proxy.PersistedSettings {
 	values := w.readForm()
 	settings := proxy.PersistedSettings{
-		AuthEnabled: values.authEnabled,
+		AuthEnabled: values.AuthEnabled,
 		Theme:       w.currentTheme,
 	}
-	if values.interfaceIndex >= 0 && values.interfaceIndex < len(w.interfaces) {
-		settings.InterfaceName = w.interfaces[values.interfaceIndex].Name
+	if values.InterfaceIndex >= 0 && values.InterfaceIndex < len(w.interfaces) {
+		settings.InterfaceName = w.interfaces[values.InterfaceIndex].Name
 	}
-	port, err := parsePort(values.port)
+	port, err := form.ParsePort(values.Port)
 	if err != nil {
 		port = proxy.DefaultPort
 	}
@@ -611,7 +676,21 @@ func (w *appWindow) applyInitialSettings() {
 		w.port.SetText(strconv.Itoa(int(config.Port)))
 	}
 	w.auth.SetCheck(config.AuthEnabled)
+	if credentials, found := w.service.LoadedCredentials(); found {
+		w.login.SetText(credentials.Username)
+		w.password.SetText(credentials.Password)
+	}
 	w.currentTheme = w.service.LoadedSettings().Theme
+}
+
+// updateStoreWarning показывает предупреждение, когда системное хранилище
+// credentials недоступно (пароль проработает сессию, но не сохранится).
+func (w *appWindow) updateStoreWarning() {
+	show := co.SW_HIDE
+	if !w.service.CredentialStoreAvailable() {
+		show = co.SW_SHOW
+	}
+	w.storeWarning.Hwnd().ShowWindow(show)
 }
 
 // changeTheme переключает тему: обновляет currentTheme, пересоздаёт ресурсы
@@ -667,13 +746,7 @@ func (w *appWindow) applyControlThemes() {
 }
 
 func (w *appWindow) previewAddress() string {
-	values := w.readForm()
-	values.authEnabled = false
-	config, err := parseForm(values, w.interfaces)
-	if err != nil {
-		return "—"
-	}
-	return config.BindAddress()
+	return form.PreviewAddress(w.readForm(), w.interfaces)
 }
 
 func (w *appWindow) onAction() {
@@ -683,9 +756,9 @@ func (w *appWindow) onAction() {
 	snapshot := w.service.Snapshot()
 	switch snapshot.State {
 	case proxy.StateStopped, proxy.StateError:
-		config, err := parseForm(w.readForm(), w.interfaces)
+		config, err := form.ParseForm(w.readForm(), w.interfaces)
 		if err != nil {
-			w.showError(safeFormError(err))
+			w.showError(form.SafeFormError(err))
 			return
 		}
 		w.pending = config
@@ -763,37 +836,37 @@ func (w *appWindow) drainResults() {
 }
 
 func (w *appWindow) applySnapshot(snapshot proxy.Snapshot) {
-	model := mapSnapshot(snapshot)
-	if model.formEnabled {
-		model.address = w.previewAddress()
+	model := form.MapSnapshot(snapshot)
+	if model.FormEnabled {
+		model.Address = w.previewAddress()
 		if len(w.interfaces) == 0 {
-			model.description = "Не найден активный LAN-интерфейс"
-			model.actionEnabled = false
+			model.Description = "Не найден активный LAN-интерфейс"
+			model.ActionEnabled = false
 		}
 	}
 	if w.closing {
-		model.actionEnabled = false
-		model.formEnabled = false
+		model.ActionEnabled = false
+		model.FormEnabled = false
 	}
 	w.applyView(model)
 }
 
-func (w *appWindow) applyView(model viewModel) {
+func (w *appWindow) applyView(model form.ViewModel) {
 	if model == w.current {
 		w.updateFormEnabled()
 		return
 	}
-	if model.formEnabled != w.current.formEnabled {
+	if model.FormEnabled != w.current.FormEnabled {
 		w.setPasswordVisible(false)
 	}
 	w.current = model
-	w.statusText.Hwnd().SetWindowText(model.status)
-	w.description.Hwnd().SetWindowText(model.description)
-	host := connectionHost(model.address)
+	w.statusText.Hwnd().SetWindowText(model.Status)
+	w.description.Hwnd().SetWindowText(model.Description)
+	host := form.ConnectionHost(model.Address)
 	w.host.SetText(host)
-	w.clients.Hwnd().SetWindowText(model.clients)
-	w.action.SetText(model.actionText)
-	w.action.Hwnd().EnableWindow(model.actionEnabled && !w.closing)
+	w.clients.Hwnd().SetWindowText(model.Clients)
+	w.action.SetText(model.ActionText)
+	w.action.Hwnd().EnableWindow(model.ActionEnabled && !w.closing)
 	w.copyHost.Hwnd().EnableWindow(host != "—" && !w.closing)
 	w.updateFormEnabled()
 	_ = w.statusDot.Hwnd().InvalidateRect(nil, true)
@@ -803,21 +876,26 @@ func (w *appWindow) applyView(model viewModel) {
 }
 
 func (w *appWindow) updateFormEnabled() {
-	formEnabled := w.current.formEnabled && !w.closing
-	w.iface.Hwnd().EnableWindow(formEnabled)
-	w.port.Hwnd().EnableWindow(formEnabled)
-	_, portErr := parsePort(w.port.Text())
+	formEnabled := w.current.FormEnabled && !w.closing
+	// Поля не дизейблим через EnableWindow(false): Windows рисует
+	// disabled-текст системным GRAYTEXT, который плохо читается на тёмной
+	// карточке. Вместо этого — ES_READONLY (combo/checkbox откатываются
+	// в обработчиках), а заблокированный текст красим mutedColor.
+	w.port.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(!formEnabled), 0)
+	_, portErr := form.ParsePort(w.port.Text())
 	w.copyPort.Hwnd().EnableWindow(portErr == nil && !w.closing)
-	w.auth.Hwnd().EnableWindow(formEnabled)
-	state := mapAuthControlState(formEnabled, w.auth.IsChecked(), w.closing, w.login.Text(), w.password.Text())
-	w.login.Hwnd().EnableWindow(state.credentialsEnabled)
-	w.password.Hwnd().EnableWindow(state.credentialsEnabled)
-	w.login.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(state.credentialsReadOnly), 0)
-	w.password.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(state.credentialsReadOnly), 0)
-	w.generate.Hwnd().EnableWindow(state.generateEnabled)
-	w.copyLogin.Hwnd().EnableWindow(state.copyLoginEnabled)
-	w.revealPassword.Hwnd().EnableWindow(state.passwordActionEnabled)
-	w.copyPassword.Hwnd().EnableWindow(state.passwordActionEnabled)
+	state := form.MapAuthControlState(formEnabled, w.auth.IsChecked(), w.closing, w.login.Text(), w.password.Text())
+	w.login.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(!state.CredentialsEnabled), 0)
+	w.password.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(!state.CredentialsEnabled), 0)
+	w.editLocked = map[win.HWND]bool{
+		w.port.Hwnd():     !formEnabled,
+		w.login.Hwnd():    !state.CredentialsEnabled,
+		w.password.Hwnd(): !state.CredentialsEnabled,
+	}
+	w.generate.Hwnd().EnableWindow(state.GenerateEnabled)
+	w.copyLogin.Hwnd().EnableWindow(state.CopyLoginEnabled)
+	w.revealPassword.Hwnd().EnableWindow(state.PasswordActionEnabled)
+	w.copyPassword.Hwnd().EnableWindow(state.PasswordActionEnabled)
 }
 
 func (w *appWindow) close() {
@@ -900,7 +978,7 @@ func (w *appWindow) installTooltips() {
 }
 
 func (w *appWindow) generateCredentials() {
-	credentials, err := generateCredentialPair(rand.Reader)
+	credentials, err := form.GenerateCredentialPair(rand.Reader)
 	if err != nil {
 		w.showError("Не удалось сгенерировать данные авторизации")
 		return
@@ -965,45 +1043,9 @@ func setClipboardText(owner win.HWND, text string) (resultErr error) {
 	return clipboard.SetClipboardData(co.CF_UNICODETEXT, data)
 }
 
-func safeFormError(err error) string {
-	for _, safe := range []error{
-		proxy.ErrInterfaceNameRequired,
-		proxy.ErrInterfaceAddressInvalid,
-		proxy.ErrInterfaceAddressNotPrivate,
-		proxy.ErrPortOutOfRange,
-		proxy.ErrUsernameRequired,
-		proxy.ErrPasswordRequired,
-	} {
-		if errors.Is(err, safe) {
-			return safe.Error()
-		}
-	}
-	return "Проверьте параметры подключения"
-}
-
 func (w *appWindow) showServiceError(fallback string) {
-	message := strings.TrimSpace(w.service.Snapshot().ErrorMessage)
-	for _, safe := range []string{
-		"Не удалось запустить прокси-сервер",
-		"Не удалось остановить прокси-сервер",
-		"Выбранный порт уже занят",
-		"Недостаточно прав для открытия порта",
-		proxy.ErrInterfaceNameRequired.Error(),
-		proxy.ErrInterfaceAddressInvalid.Error(),
-		proxy.ErrInterfaceAddressNotPrivate.Error(),
-		proxy.ErrPortOutOfRange.Error(),
-		proxy.ErrUsernameRequired.Error(),
-		proxy.ErrPasswordRequired.Error(),
-	} {
-		if message == safe {
-			w.showError(message)
-			return
-		}
-	}
-	if strings.TrimSpace(fallback) == "" {
-		fallback = operationFallback
-	}
-	w.showError(fallback)
+	message := w.service.Snapshot().ErrorMessage
+	w.showError(form.SafeServiceMessage(message, fallback))
 }
 
 func (w *appWindow) showError(message string) {
@@ -1019,8 +1061,20 @@ func (w *appWindow) colorStatic(event ui.WmCtlColor) win.HBRUSH {
 	palette := w.resources.palette
 	if hwnd == w.statusDot.Hwnd() {
 		_, _ = hdc.SetBkMode(co.BKMODE_TRANSPARENT)
-		_, _ = hdc.SetTextColor(dotColor(w.current.dot, palette))
+		_, _ = hdc.SetTextColor(dotColor(w.current.Dot, palette))
 		return w.resources.cardBrush
+	}
+	// Read-only edit-контролы (soft-lock) шлют WM_CTLCOLORSTATIC, а не
+	// WM_CTLCOLOREDIT — красим их как edit на карточке.
+	if hwnd == w.port.Hwnd() || hwnd == w.login.Hwnd() || hwnd == w.password.Hwnd() {
+		color := palette.textColor
+		if w.editLocked[hwnd] {
+			color = palette.mutedColor
+		}
+		_, _ = hdc.SetBkMode(co.BKMODE_OPAQUE)
+		_, _ = hdc.SetBkColor(palette.windowColor)
+		_, _ = hdc.SetTextColor(color)
+		return w.resources.windowBrush
 	}
 	if containsStatic(w.settingsBox, hwnd) || containsStatic(w.statusBox, hwnd) {
 		_, _ = hdc.SetBkMode(co.BKMODE_OPAQUE)
@@ -1029,7 +1083,10 @@ func (w *appWindow) colorStatic(event ui.WmCtlColor) win.HBRUSH {
 		if containsStatic(w.muted, hwnd) {
 			color = palette.mutedColor
 		}
-		if hwnd == w.description.Hwnd() && w.current.dot == dotDanger {
+		if hwnd == w.storeWarning.Hwnd() {
+			color = palette.dotWarningColor
+		}
+		if hwnd == w.description.Hwnd() && w.current.Dot == form.DotDanger {
 			color = palette.dotDangerColor
 		}
 		_, _ = hdc.SetTextColor(color)
@@ -1083,20 +1140,20 @@ func containsStatic(statics []*ui.Static, hwnd win.HWND) bool {
 	return false
 }
 
-func dotColor(tone dotTone, palette themePalette) win.COLORREF {
+func dotColor(tone form.DotTone, palette themePalette) win.COLORREF {
 	switch tone {
-	case dotWarning:
+	case form.DotWarning:
 		return palette.dotWarningColor
-	case dotSuccess:
+	case form.DotSuccess:
 		return palette.dotSuccessColor
-	case dotDanger:
+	case form.DotDanger:
 		return palette.dotDangerColor
 	default:
 		return palette.dotMutedColor
 	}
 }
 
-func drawActionButton(item *win.DRAWITEMSTRUCT, model viewModel, resources *windowResources) {
+func drawActionButton(item *win.DRAWITEMSTRUCT, model form.ViewModel, resources *windowResources) {
 	if item == nil {
 		return
 	}
@@ -1106,7 +1163,7 @@ func drawActionButton(item *win.DRAWITEMSTRUCT, model viewModel, resources *wind
 	background := resources.blueBrush
 	border := resources.bluePressedBrush
 	textColor := win.RGB(255, 255, 255)
-	if model.action == actionDanger {
+	if model.Action == form.ActionDanger {
 		background = resources.redBrush
 		border = resources.redPressedBrush
 	}
@@ -1132,7 +1189,7 @@ func drawActionButton(item *win.DRAWITEMSTRUCT, model viewModel, resources *wind
 	if colorErr == nil {
 		defer item.Hdc.SetTextColor(oldColor)
 	}
-	size, err := item.Hdc.GetTextExtentPoint32(model.actionText)
+	size, err := item.Hdc.GetTextExtentPoint32(model.ActionText)
 	if err == nil {
 		x := item.RcItem.Left + (item.RcItem.Right-item.RcItem.Left-size.Cx)/2
 		y := item.RcItem.Top + (item.RcItem.Bottom-item.RcItem.Top-size.Cy)/2
@@ -1140,7 +1197,7 @@ func drawActionButton(item *win.DRAWITEMSTRUCT, model viewModel, resources *wind
 			x++
 			y++
 		}
-		_ = item.Hdc.TextOut(int(x), int(y), model.actionText)
+		_ = item.Hdc.TextOut(int(x), int(y), model.ActionText)
 	}
 	if !disabled && item.ItemState&co.ODS_FOCUS != 0 {
 		insetX, insetY := int32(ui.DpiX(4)), int32(ui.DpiY(4))

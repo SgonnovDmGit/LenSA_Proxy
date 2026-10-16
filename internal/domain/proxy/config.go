@@ -18,6 +18,11 @@ var (
 	ErrPortOutOfRange             = errors.New("порт должен быть в диапазоне 1024..65535")
 	ErrUsernameRequired           = errors.New("укажите логин для авторизации")
 	ErrPasswordRequired           = errors.New("укажите пароль для авторизации")
+
+	// ErrStoreUnavailable — системное хранилище credentials недоступно
+	// (например, нет Secret Service daemon на Linux). Реализации
+	// CredentialStore маппят ошибки провайдера на эту sentinel-ошибку.
+	ErrStoreUnavailable = errors.New("системное хранилище credentials недоступно")
 )
 
 type Credentials struct {

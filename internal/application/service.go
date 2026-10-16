@@ -17,7 +17,6 @@ const (
 	stopErrorMessage          = "Не удалось остановить прокси-сервер"
 	portInUseErrorMessage     = "Выбранный порт уже занят"
 	permissionErrorMessage    = "Недостаточно прав для открытия порта"
-	windowsAddressInUseErrno  = syscall.Errno(10048)
 	failedStartCleanupTimeout = 5 * time.Second
 )
 
@@ -60,16 +59,32 @@ func WithSettings(loader SettingsLoader, saver SettingsSaver) Option {
 	}
 }
 
+// WithCredentialStore подключает системное хранилище credential-пары.
+// При инициализации пара читается через Load и доступна presentation через
+// LoadedCredentials; ошибка Load помечает хранилище недоступным. После
+// каждого успешного Start: auth on → Save, auth off → Delete. Ошибки
+// Save/Delete не влияют на результат Start — фиксируются как недоступность
+// для UI через CredentialStoreAvailable.
+func WithCredentialStore(store CredentialStore) Option {
+	return func(s *Service) {
+		s.credentialStore = store
+	}
+}
+
 type Service struct {
-	operationMutex  sync.Mutex
-	snapshotMutex   sync.RWMutex
-	interfaceSource InterfaceSource
-	serverFactory   ServerFactory
-	settingsLoader  SettingsLoader
-	settingsSaver   SettingsSaver
-	loadedSettings  proxy.PersistedSettings
-	snapshot        proxy.Snapshot
-	server          Server
+	operationMutex           sync.Mutex
+	snapshotMutex            sync.RWMutex
+	interfaceSource          InterfaceSource
+	serverFactory            ServerFactory
+	settingsLoader           SettingsLoader
+	settingsSaver            SettingsSaver
+	credentialStore          CredentialStore
+	credentialStoreAvailable bool
+	loadedSettings           proxy.PersistedSettings
+	loadedCredentials        proxy.Credentials
+	hasLoadedCredentials     bool
+	snapshot                 proxy.Snapshot
+	server                   Server
 }
 
 func NewService(interfaceSource InterfaceSource, serverFactory ServerFactory, opts ...Option) (*Service, error) {
@@ -96,6 +111,16 @@ func NewService(interfaceSource InterfaceSource, serverFactory ServerFactory, op
 	if service.settingsLoader != nil {
 		loaded, _ := service.settingsLoader()
 		service.applyPersistedSettings(loaded)
+	}
+	if !isNilValue(service.credentialStore) {
+		credentials, found, err := service.credentialStore.Load()
+		if err != nil {
+			service.credentialStoreAvailable = false
+		} else {
+			service.credentialStoreAvailable = true
+			service.loadedCredentials = credentials
+			service.hasLoadedCredentials = found
+		}
 	}
 	return service, nil
 }
@@ -155,6 +180,25 @@ func (s *Service) LoadedSettings() proxy.PersistedSettings {
 	return s.loadedSettings
 }
 
+// LoadedCredentials возвращает credential-пару, восстановленную из системного
+// хранилища при инициализации. false — записи нет или хранилище недоступно.
+// Пароль не проникает в Snapshot и PersistedSettings — только этот геттер.
+func (s *Service) LoadedCredentials() (proxy.Credentials, bool) {
+	s.snapshotMutex.RLock()
+	defer s.snapshotMutex.RUnlock()
+	return s.loadedCredentials, s.hasLoadedCredentials
+}
+
+// CredentialStoreAvailable сообщает, доступно ли системное хранилище
+// credentials: false — store не задан, Load вернул ошибку при старте или
+// последняя операция Save/Delete завершилась ошибкой. UI показывает
+// предупреждение, что credentials живут только до конца сессии.
+func (s *Service) CredentialStoreAvailable() bool {
+	s.snapshotMutex.RLock()
+	defer s.snapshotMutex.RUnlock()
+	return s.credentialStoreAvailable
+}
+
 func (s *Service) Interfaces() ([]proxy.NetworkInterface, error) {
 	interfaces, err := s.interfaceSource()
 	if err != nil {
@@ -207,7 +251,29 @@ func (s *Service) Start(config proxy.Config) error {
 		Config:  config,
 		Address: address,
 	}, server)
+	s.persistCredentials(config)
 	return nil
+}
+
+// persistCredentials записывает или удаляет credential-пару после успешного
+// Start: auth on → Save, auth off → Delete. При неудачном Start store не
+// трогается — валидные сохранённые креды не теряются. Ошибки store не влияют
+// на результат Start — помечают хранилище недоступным для UI.
+func (s *Service) persistCredentials(config proxy.Config) {
+	if isNilValue(s.credentialStore) {
+		return
+	}
+	var err error
+	if config.AuthEnabled {
+		err = s.credentialStore.Save(config.Credentials)
+	} else {
+		err = s.credentialStore.Delete()
+	}
+	if err != nil {
+		s.snapshotMutex.Lock()
+		s.credentialStoreAvailable = false
+		s.snapshotMutex.Unlock()
+	}
 }
 
 func (s *Service) Stop(ctx context.Context) error {
@@ -279,7 +345,7 @@ func (s *Service) failStop(config proxy.Config) {
 }
 
 func lifecycleErrorMessage(err error, fallback string) string {
-	if errors.Is(err, syscall.EADDRINUSE) || errors.Is(err, windowsAddressInUseErrno) {
+	if errors.Is(err, syscall.EADDRINUSE) || errors.Is(err, addressInUseErrno) {
 		return portInUseErrorMessage
 	}
 	if errors.Is(err, os.ErrPermission) {

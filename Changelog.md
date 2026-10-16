@@ -6,6 +6,32 @@
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-16
+
+### Added
+
+- Кроссплатформенная поддержка: нативное окно на Linux и macOS (Fyne v2.8) с полным parity к Windows-форме — выбор интерфейса, порт, auth, генерация/показ/копирование credentials, вычисляемый host, темы, Start/Stop, статус и счётчик клиентов.
+- Безопасное хранение credentials в системном хранилище ОС (`go-keyring` v0.2.8): Windows Credential Manager, macOS Keychain, Linux Secret Service. Пара логин/пароль сохраняется одной записью после успешного Start с включённой авторизацией и восстанавливается в поля формы при следующем запуске.
+- Удаление сохранённой credential-записи после успешного Start без авторизации.
+- Индикатор недоступности системного хранилища в обоих UI; store-ошибки не блокируют запуск proxy.
+- Общий платформенно-нейтральный пакет `internal/presentation/form`: view-model, парсинг формы, preview-адрес и безопасные тексты ошибок, переиспользуемые обоими UI.
+- `scripts/build-unix.sh` — нативная сборка `LenSA_Proxy_<os>_<arch>.tar.gz` с ldflags version/commit.
+- CI `verify-unix` matrix job: linux amd64, linux arm64 (нативный `ubuntu-24.04-arm`), darwin amd64, darwin arm64 — fmt/vet/test + сборка артефакта.
+- Release workflow реструктурирован в multi-job: `validate` → `build-windows` + `build-unix` (нативные раннеры) → `publish` с шестью артефактами и общим `SHA256SUMS.txt`.
+- `docs/flows/credential-store.md` — lifecycle credential-хранилища.
+
+### Changed
+
+- `internal/presentation/windows/view.go` разделён: платформенно-нейтральная логика переехала в `internal/presentation/form` с экспортированными типами; поведение Windows UI не изменилось.
+- `main.go` ограничен `windows && !fyneui`; добавлен `main_fyne.go` для `linux || darwin || fyneui`.
+- Проверка errno «порт занят» разнесена по per-OS файлам (`errno_windows.go` / `errno_unix.go`), shared `service.go` полностью переносим.
+- `LenSA_Proxy.ini` теперь работает и на nix — рядом с executable, как на Windows.
+
+### Security
+
+- Credentials никогда не записываются в `.ini`, логи и release-документацию; plaintext-fallback при недоступном хранилище отсутствует.
+- Ошибка Start не изменяет сохранённые credentials: save/delete выполняются только после успешного `server.Start()`.
+
 ## [0.2.0] — 2026-07-25
 
 ### Added

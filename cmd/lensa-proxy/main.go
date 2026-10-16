@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows && !fyneui
 
 package main
 
@@ -9,6 +9,7 @@ import (
 
 	"github.com/SgonnovDmGit/LenSA_Proxy/internal/application"
 	"github.com/SgonnovDmGit/LenSA_Proxy/internal/domain/proxy"
+	"github.com/SgonnovDmGit/LenSA_Proxy/internal/infrastructure/keyring"
 	"github.com/SgonnovDmGit/LenSA_Proxy/internal/infrastructure/network"
 	"github.com/SgonnovDmGit/LenSA_Proxy/internal/infrastructure/storage"
 	"github.com/SgonnovDmGit/LenSA_Proxy/internal/presentation/windows"
@@ -33,6 +34,7 @@ func main() {
 			return network.NewServer(config)
 		},
 		application.WithSettings(settingsStorage.Load, settingsStorage.Save),
+		application.WithCredentialStore(keyring.NewStore()),
 	)
 	if err != nil {
 		showStartupError()
@@ -42,7 +44,7 @@ func main() {
 	if packaged == "true" {
 		run = windows.RunPackaged
 	}
-	code, err := run(service)
+	code, err := run(service, version)
 	if err != nil {
 		showStartupError()
 		os.Exit(1)
