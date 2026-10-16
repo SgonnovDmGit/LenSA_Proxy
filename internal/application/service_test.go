@@ -867,3 +867,191 @@ func TestServiceSaveSettings(t *testing.T) {
 		}
 	})
 }
+
+type fakeCredentialStore struct {
+	credentials proxy.Credentials
+	found       bool
+	loadErr     error
+	saveErr     error
+	deleteErr   error
+	loadCalls   atomic.Int64
+	saveCalls   atomic.Int64
+	deleteCalls atomic.Int64
+	saved       proxy.Credentials
+}
+
+func (s *fakeCredentialStore) Load() (proxy.Credentials, bool, error) {
+	s.loadCalls.Add(1)
+	return s.credentials, s.found, s.loadErr
+}
+
+func (s *fakeCredentialStore) Save(credentials proxy.Credentials) error {
+	s.saveCalls.Add(1)
+	s.saved = credentials
+	return s.saveErr
+}
+
+func (s *fakeCredentialStore) Delete() error {
+	s.deleteCalls.Add(1)
+	return s.deleteErr
+}
+
+func authConfig() proxy.Config {
+	config := validConfig()
+	config.AuthEnabled = true
+	config.Credentials = proxy.Credentials{Username: "lensa-abc123", Password: "secret-pass"}
+	return config
+}
+
+func TestServiceCredentialStoreRestore(t *testing.T) {
+	want := proxy.Credentials{Username: "lensa-abc123", Password: "secret-pass"}
+	store := &fakeCredentialStore{credentials: want, found: true}
+	service, err := NewService(emptyInterfaceSource, func(proxy.Config) (Server, error) {
+		return &fakeServer{}, nil
+	}, WithCredentialStore(store))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if got := store.loadCalls.Load(); got != 1 {
+		t.Fatalf("Load calls = %d, want 1", got)
+	}
+	credentials, found := service.LoadedCredentials()
+	if !found || credentials != want {
+		t.Fatalf("LoadedCredentials() = %+v, %v; want %+v, true", credentials, found, want)
+	}
+	if !service.CredentialStoreAvailable() {
+		t.Fatal("CredentialStoreAvailable() = false after successful Load")
+	}
+}
+
+func TestServiceCredentialStoreEmptyAndMissing(t *testing.T) {
+	t.Run("empty record", func(t *testing.T) {
+		store := &fakeCredentialStore{found: false}
+		service, err := NewService(emptyInterfaceSource, func(proxy.Config) (Server, error) {
+			return &fakeServer{}, nil
+		}, WithCredentialStore(store))
+		if err != nil {
+			t.Fatalf("NewService() error = %v", err)
+		}
+		if _, found := service.LoadedCredentials(); found {
+			t.Fatal("LoadedCredentials() found=true, want false")
+		}
+		if !service.CredentialStoreAvailable() {
+			t.Fatal("CredentialStoreAvailable() = false on empty store")
+		}
+	})
+
+	t.Run("load error marks unavailable", func(t *testing.T) {
+		store := &fakeCredentialStore{loadErr: errors.New("dbus: connection refused")}
+		service, err := NewService(emptyInterfaceSource, func(proxy.Config) (Server, error) {
+			return &fakeServer{}, nil
+		}, WithCredentialStore(store))
+		if err != nil {
+			t.Fatalf("NewService() error = %v", err)
+		}
+		if _, found := service.LoadedCredentials(); found {
+			t.Fatal("LoadedCredentials() found=true on store error")
+		}
+		if service.CredentialStoreAvailable() {
+			t.Fatal("CredentialStoreAvailable() = true on store error")
+		}
+	})
+
+	t.Run("no store configured", func(t *testing.T) {
+		service := newTestService(t, emptyInterfaceSource, func(proxy.Config) (Server, error) {
+			return &fakeServer{}, nil
+		})
+		if _, found := service.LoadedCredentials(); found {
+			t.Fatal("LoadedCredentials() found=true without store")
+		}
+		if service.CredentialStoreAvailable() {
+			t.Fatal("CredentialStoreAvailable() = true without store")
+		}
+	})
+}
+
+func TestServiceStartPersistsCredentialsOnAuth(t *testing.T) {
+	store := &fakeCredentialStore{}
+	server := &fakeServer{address: "192.168.1.20:8080"}
+	service, err := NewService(emptyInterfaceSource, func(proxy.Config) (Server, error) {
+		return server, nil
+	}, WithCredentialStore(store))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	config := authConfig()
+
+	if err := service.Start(config); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if got := store.saveCalls.Load(); got != 1 {
+		t.Fatalf("Save calls = %d, want 1", got)
+	}
+	if store.saved != config.Credentials {
+		t.Fatalf("saved credentials = %+v, want %+v", store.saved, config.Credentials)
+	}
+	if got := store.deleteCalls.Load(); got != 0 {
+		t.Fatalf("Delete calls = %d, want 0", got)
+	}
+}
+
+func TestServiceStartWithoutAuthDeletesCredentials(t *testing.T) {
+	store := &fakeCredentialStore{}
+	server := &fakeServer{address: "192.168.1.20:8080"}
+	service, err := NewService(emptyInterfaceSource, func(proxy.Config) (Server, error) {
+		return server, nil
+	}, WithCredentialStore(store))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	config := validConfig()
+
+	if err := service.Start(config); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if got := store.deleteCalls.Load(); got != 1 {
+		t.Fatalf("Delete calls = %d, want 1", got)
+	}
+	if got := store.saveCalls.Load(); got != 0 {
+		t.Fatalf("Save calls = %d, want 0", got)
+	}
+}
+
+func TestServiceFailedStartDoesNotTouchStore(t *testing.T) {
+	store := &fakeCredentialStore{}
+	startErr := errors.New("listen failed")
+	server := &fakeServer{start: func() error { return startErr }}
+	service, err := NewService(emptyInterfaceSource, func(proxy.Config) (Server, error) {
+		return server, nil
+	}, WithCredentialStore(store))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if err := service.Start(authConfig()); !errors.Is(err, startErr) {
+		t.Fatalf("Start() error = %v, want %v", err, startErr)
+	}
+	if store.saveCalls.Load() != 0 || store.deleteCalls.Load() != 0 {
+		t.Fatalf("store touched on failed Start: saves=%d deletes=%d", store.saveCalls.Load(), store.deleteCalls.Load())
+	}
+}
+
+func TestServiceStoreErrorDoesNotFailStart(t *testing.T) {
+	store := &fakeCredentialStore{saveErr: errors.New("keyring write failed")}
+	server := &fakeServer{address: "192.168.1.20:8080"}
+	service, err := NewService(emptyInterfaceSource, func(proxy.Config) (Server, error) {
+		return server, nil
+	}, WithCredentialStore(store))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	config := authConfig()
+
+	if err := service.Start(config); err != nil {
+		t.Fatalf("Start() error = %v, want nil", err)
+	}
+	assertSnapshot(t, service.Snapshot(), proxy.StateRunning, config, server.address, 0, "")
+	if service.CredentialStoreAvailable() {
+		t.Fatal("CredentialStoreAvailable() = true after Save error")
+	}
+}
