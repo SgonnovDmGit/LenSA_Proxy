@@ -109,7 +109,7 @@ jobs:
         env:
           GOOS_TARGET: ${{ matrix.goos }}
           GOARCH_TARGET: ${{ matrix.goarch }}
-          VERSION: 0.0.0-ci
+          VERSION: dev
         run: ./scripts/build-unix.sh
 
       - name: Upload unix artifact

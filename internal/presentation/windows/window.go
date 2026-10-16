@@ -164,6 +164,8 @@ type appWindow struct {
 	passwordVisible bool
 	passwordMask    win.WPARAM
 	version         string
+	savedIfaceIndex int
+	editLocked      map[win.HWND]bool
 	tooltip         win.HWND
 	tooltipTexts    [][]uint16
 	tooltipInfos    []*tooltipInfo
@@ -291,6 +293,8 @@ func (w *appWindow) createControls() {
 		Texts(interfaceNames...).
 		Select(selected).
 		Layout(resize))
+	w.savedIfaceIndex = selected
+	w.editLocked = map[win.HWND]bool{}
 	w.portLabel = ui.NewStatic(w.wnd, ui.OptsStatic().
 		Text("Порт").
 		Position(ui.Dpi(37, 154)).
@@ -450,10 +454,24 @@ func (w *appWindow) createControls() {
 }
 
 func (w *appWindow) bindEvents() {
-	w.iface.On().CbnSelChange(w.onFormChanged)
+	w.iface.On().CbnSelChange(func() {
+		if w.formLocked() {
+			// Контрол не disabled (читаемость), поэтому изменение откатываем.
+			if w.savedIfaceIndex >= 0 {
+				w.iface.SelectIndex(w.savedIfaceIndex)
+			}
+			return
+		}
+		w.savedIfaceIndex = w.iface.SelectedIndex()
+		w.onFormChanged()
+	})
 	w.port.On().EnChange(w.onFormChanged)
 	w.auth.On().BnClicked(func() {
 		if !w.ready {
+			return
+		}
+		if w.formLocked() {
+			w.auth.SetCheck(!w.auth.IsChecked())
 			return
 		}
 		if !w.auth.IsChecked() {
@@ -593,6 +611,12 @@ func (w *appWindow) applyToggleFont() {
 
 func setControlFont(hwnd win.HWND, font win.HFONT) {
 	hwnd.SendMessage(co.WM_SETFONT, win.WPARAM(font), 1)
+}
+
+// formLocked сообщает, заблокирована ли форма (прокси работает или идёт
+// закрытие). Используется soft-lock контролами, которые остаются enabled.
+func (w *appWindow) formLocked() bool {
+	return w.ready && (w.closing || !w.current.FormEnabled)
 }
 
 func (w *appWindow) onFormChanged() {
@@ -853,16 +877,21 @@ func (w *appWindow) applyView(model form.ViewModel) {
 
 func (w *appWindow) updateFormEnabled() {
 	formEnabled := w.current.FormEnabled && !w.closing
-	w.iface.Hwnd().EnableWindow(formEnabled)
-	w.port.Hwnd().EnableWindow(formEnabled)
+	// Поля не дизейблим через EnableWindow(false): Windows рисует
+	// disabled-текст системным GRAYTEXT, который плохо читается на тёмной
+	// карточке. Вместо этого — ES_READONLY (combo/checkbox откатываются
+	// в обработчиках), а заблокированный текст красим mutedColor.
+	w.port.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(!formEnabled), 0)
 	_, portErr := form.ParsePort(w.port.Text())
 	w.copyPort.Hwnd().EnableWindow(portErr == nil && !w.closing)
-	w.auth.Hwnd().EnableWindow(formEnabled)
 	state := form.MapAuthControlState(formEnabled, w.auth.IsChecked(), w.closing, w.login.Text(), w.password.Text())
-	w.login.Hwnd().EnableWindow(state.CredentialsEnabled)
-	w.password.Hwnd().EnableWindow(state.CredentialsEnabled)
-	w.login.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(state.CredentialsReadOnly), 0)
-	w.password.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(state.CredentialsReadOnly), 0)
+	w.login.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(!state.CredentialsEnabled), 0)
+	w.password.Hwnd().SendMessage(co.EM_SETREADONLY, boolWParam(!state.CredentialsEnabled), 0)
+	w.editLocked = map[win.HWND]bool{
+		w.port.Hwnd():     !formEnabled,
+		w.login.Hwnd():    !state.CredentialsEnabled,
+		w.password.Hwnd(): !state.CredentialsEnabled,
+	}
 	w.generate.Hwnd().EnableWindow(state.GenerateEnabled)
 	w.copyLogin.Hwnd().EnableWindow(state.CopyLoginEnabled)
 	w.revealPassword.Hwnd().EnableWindow(state.PasswordActionEnabled)
@@ -1034,6 +1063,18 @@ func (w *appWindow) colorStatic(event ui.WmCtlColor) win.HBRUSH {
 		_, _ = hdc.SetBkMode(co.BKMODE_TRANSPARENT)
 		_, _ = hdc.SetTextColor(dotColor(w.current.Dot, palette))
 		return w.resources.cardBrush
+	}
+	// Read-only edit-контролы (soft-lock) шлют WM_CTLCOLORSTATIC, а не
+	// WM_CTLCOLOREDIT — красим их как edit на карточке.
+	if hwnd == w.port.Hwnd() || hwnd == w.login.Hwnd() || hwnd == w.password.Hwnd() {
+		color := palette.textColor
+		if w.editLocked[hwnd] {
+			color = palette.mutedColor
+		}
+		_, _ = hdc.SetBkMode(co.BKMODE_OPAQUE)
+		_, _ = hdc.SetBkColor(palette.windowColor)
+		_, _ = hdc.SetTextColor(color)
+		return w.resources.windowBrush
 	}
 	if containsStatic(w.settingsBox, hwnd) || containsStatic(w.statusBox, hwnd) {
 		_, _ = hdc.SetBkMode(co.BKMODE_OPAQUE)

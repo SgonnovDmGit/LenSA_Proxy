@@ -31,6 +31,13 @@ func (t *lensaTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) 
 	case proxy.ThemeDark:
 		variant = theme.VariantDark
 	}
+	if name == theme.ColorNameDisabled {
+		// Стандартный disabled-цвет Fyne (~25% альфа) слишком тусклый —
+		// поднимаем до ~60% от foreground, чтобы поля формы оставались читаемыми.
+		fg := t.base.Color(theme.ColorNameForeground, variant)
+		r, g, b, _ := fg.RGBA()
+		return color.NRGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: 150}
+	}
 	return t.base.Color(name, variant)
 }
 
